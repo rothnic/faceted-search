@@ -16,7 +16,7 @@ Complete guide for implementing faceted, geo-aware, and semantic search using th
 - [Embedding Management](#embedding-management)
 - [Frontend Integration](#frontend-integration)
 - [Performance Tuning](#performance-tuning)
-- [When to Use pg_search](#when-to-use-pg_search)
+- [When to Use pg_search](#when-to-use-pgsearch)
 
 ## Overview
 

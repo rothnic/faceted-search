@@ -101,15 +101,27 @@ Generates a skills section in AGENTS.md that helps agents know:
 
 ### Step 5: Validate the Setup
 
+**Validate progressive disclosure structure:**
 ```bash
 python scripts/validate_progressive_disclosure.py
 ```
 
 Checks:
-- AGENTS.md is under instruction budget
+- AGENTS.MD is under instruction budget
 - Skills are properly referenced
 - No duplication between AGENTS.md and skills
 - Skill descriptions are discoverable
+
+**Validate markdown links:**
+```bash
+python scripts/validate_markdown_links.py path/to/skill/
+```
+
+Checks:
+- Internal file links are not broken
+- Referenced files exist
+- Anchor links point to valid headings
+- No dead cross-references
 
 ## AGENTS.md Structure and Best Practices
 
@@ -374,6 +386,36 @@ Exit codes:
 - 0: Validation passed
 - 1: Validation failed (see error output)
 - 2: Invalid arguments
+```
+
+### Available Validation Scripts
+
+**validate_progressive_disclosure.py** - Validates AGENTS.md and skill structure
+- Checks instruction budget compliance
+- Verifies skill references are valid
+- Detects duplication between AGENTS.md and skills
+
+**validate_skill.py** - Validates individual SKILL.md files
+- Checks frontmatter format
+- Validates reference links
+- Detects anti-patterns and quality issues
+
+**validate_markdown_links.py** - Validates markdown link integrity
+- Checks all internal file links
+- Validates anchor references (#heading)
+- Detects broken cross-references
+- Suggests similar anchors for typos
+
+Usage:
+```bash
+# Validate single skill directory
+python scripts/validate_markdown_links.py .windsurf/skills/my-skill/
+
+# Validate with anchor checking
+python scripts/validate_markdown_links.py --check-anchors docs/
+
+# Validate single file
+python scripts/validate_markdown_links.py README.md
 ```
 
 ## Content Guidelines
