@@ -1,118 +1,201 @@
 ---
-name: skill-creator
-description: Create well-structured AI agent skills following progressive disclosure best practices. Use when authoring new skills, refactoring existing skills, or deciding between project-specific and shared skill management strategies.
+name: progressive-disclosure
+description: Manage AGENTS.md and skills using progressive disclosure to optimize AI agent context. Use when setting up a project, creating AGENTS.md, managing skills, or optimizing token usage across both files.
 ---
 
-# Skill Creator
+# Progressive Disclosure for AGENTS.md and Skills
 
-Create effective AI agent skills using progressive disclosure principles and best practices from Vercel, Anthropic, and the broader AI agent ecosystem.
+Optimize AI agent context using progressive disclosure principles. Manage AGENTS.md as a minimal entry point that references skills for detailed guidance, keeping the instruction budget efficient while maintaining capability.
 
 ## When to Use This Skill
 
-- Creating a new skill from scratch
-- Refactoring an existing skill to improve token efficiency
-- Deciding whether a skill should be project-specific or shared across projects
-- Validating skill structure and content quality
-- Setting up skill management workflows for teams
+- Setting up AGENTS.md for a new or existing project
+- Creating semantic skill references that help agents discover skills
+- Refactoring bloated AGENTS.md files (>150 instructions)
+- Creating skills to extract content from AGENTS.md
+- Optimizing the relationship between AGENTS.md and skills
+- Managing skill discovery and loading patterns
+- Validating AGENTS.md and skill structure
 
 ## Core Principles
 
-### 1. Progressive Disclosure First
-Skills should reveal complexity gradually:
-- **SKILL.md**: Core instructions only (target <500 lines)
-- **reference/**: Detailed documentation loaded on demand
-- **scripts/**: Executable code that doesn't consume context until run
+### The Instruction Budget Problem
 
-### 2. Minimal Viable Context
-Default assumption: The model is already smart. Only include what the agent cannot infer:
-- Specific domain knowledge
-- Non-obvious workflows
-- Tool usage patterns
-- Guardrails and constraints
+**AGENTS.md loads on EVERY turn**. Frontier LLMs can follow ~150-200 instructions consistently. This creates hard constraints:
+- AGENTS.md tokens compete with conversation history
+- Every instruction must justify its presence
+- Bloat reduces agent effectiveness
 
-### 3. Token Efficiency
-Every token in SKILL.md competes with conversation history and task context. Challenge each line:
-- "Does the agent really need this explanation?"
-- "Can this be moved to a reference file?"
-- "Would a script be more token-efficient?"
+**Skills load on demand**. They provide progressive disclosure:
+- Agents see only name + description at startup
+- Full content loads when relevant
+- Detail doesn't pollute context unnecessarily
 
-## Quick Start Workflow
+### The Golden Rule
 
-### Step 1: Determine Skill Scope
+**AGENTS.md** = Minimal entry point + skill references  
+**Skills** = Detailed guidance loaded when needed
 
-Ask these questions:
-- **Domain**: What specific area does this skill cover?
-- **Trigger**: When should an agent load this skill?
-- **Boundaries**: What is explicitly out of scope?
+### Progressive Disclosure Hierarchy
 
-Document answers in 1-2 sentences for the description field.
+```
+AGENTS.md (50-150 lines)
+├── Project essentials
+├── Skill references
+└── Critical conventions
 
-### Step 2: Choose Storage Location
+Skills (loaded on demand)
+├── Domain-specific patterns
+├── Detailed workflows
+└── Complex guidelines
+```
 
-See `reference/project-vs-shared-skills.md` for detailed decision tree.
+## Quick Start: Setting Up Progressive Disclosure
 
-**Quick guidance**:
-- **Project-specific**: `.windsurf/skills/` in project repo
-- **Shared across projects**: Central skills repository or user-level config
-- **Team-shared**: Dedicated skills repo with version control
+### Step 1: Check for AGENTS.md
 
-### Step 3: Create Skill Structure
-
-Run the template generator:
+Run the initialization script:
 ```bash
-python scripts/create_skill_template.py --name your-skill-name --scope [project|shared|team]
+python scripts/init_agents_md.py
 ```
 
-This creates:
-```
-your-skill-name/
-├── SKILL.md
-├── scripts/
-│   └── .gitkeep
-└── reference/
-    └── .gitkeep
-```
+**If AGENTS.md doesn't exist**: Script creates a minimal template  
+**If AGENTS.md exists**: Script analyzes and suggests improvements
 
-### Step 4: Write Core Content
+### Step 2: Analyze Current State
 
-Follow this structure in SKILL.md:
-
-```markdown
----
-name: your-skill-name
-description: What it does and when to use it (max 1024 chars)
----
-
-# Skill Name
-
-Brief overview (2-3 sentences)
-
-## When to Use This Skill
-- Specific trigger scenario 1
-- Specific trigger scenario 2
-
-## Core Instructions
-Main workflow steps
-
-## Reference Documentation
-For detailed information, see:
-- reference/detailed-guide.md
-- reference/examples.md
-```
-
-### Step 5: Validate
-
-Run the validation script:
+Run the analyzer to understand what you have:
 ```bash
-python scripts/validate_skill.py path/to/your-skill/SKILL.md
+python scripts/analyze_context.py
+```
+
+This reports:
+- AGENTS.md instruction count and token usage
+- Available skills and their descriptions
+- Potential extractions (content that should move to skills)
+- Skill discovery gaps
+
+### Step 3: Extract to Skills
+
+If AGENTS.md is bloated (>150 instructions):
+```bash
+python scripts/extract_to_skill.py --section "Section Name"
+```
+
+This:
+- Creates new skill with extracted content
+- Updates AGENTS.md with skill reference
+- Maintains semantic discovery hints
+
+### Step 4: Manage Skill References
+
+Keep skill references discoverable in AGENTS.md:
+```bash
+python scripts/update_skill_references.py
+```
+
+Generates a skills section in AGENTS.md that helps agents know:
+- What skills exist
+- When to load each skill
+- How important each skill is to follow
+
+### Step 5: Validate the Setup
+
+```bash
+python scripts/validate_progressive_disclosure.py
 ```
 
 Checks:
-- Frontmatter structure and field requirements
-- SKILL.md line count (<500 recommended)
-- Reference file structure
-- Script executability
-- Common anti-patterns
+- AGENTS.md is under instruction budget
+- Skills are properly referenced
+- No duplication between AGENTS.md and skills
+- Skill descriptions are discoverable
+
+## AGENTS.md Structure and Best Practices
+
+### What Belongs in AGENTS.md
+
+**The Minimal Three**:
+1. **One-sentence project description** (acts as role-based prompt)
+2. **Package manager** (if not npm/default)
+3. **Non-standard build commands** (if not obvious)
+
+**Optional but recommended**:
+- Skill references section (helps with discovery)
+- Critical project-wide conventions (5-10 lines max)
+
+**What does NOT belong**:
+- ❌ Language-specific conventions (extract to skills)
+- ❌ Detailed workflows (extract to skills)  
+- ❌ File structure documentation (agents can navigate)
+- ❌ Tool usage guides (link to external docs or skills)
+- ❌ Testing strategies (extract to skills)
+- ❌ Time-sensitive information (versions, "current state")
+
+### AGENTS.md Template
+
+```markdown
+# Project Overview
+
+[One-sentence description of what this project does and its purpose]
+
+## Development Setup
+
+- Package manager: [pnpm/yarn/npm]
+- Build: `[build command if non-standard]`
+- Test: `[test command if non-standard]`
+
+## Skills Available
+
+This project uses skills for detailed guidance. Load the appropriate skill when working in these areas:
+
+- **[skill-name]**: [When to use it - one line]
+- **[skill-name]**: [When to use it - one line]
+- **[skill-name]**: [When to use it - one line]
+
+## Critical Conventions
+
+[Only include 5-10 lines of project-wide conventions that apply everywhere]
+```
+
+### Skill Reference Patterns in AGENTS.md
+
+**Good** - Semantic hints that help with discovery:
+```markdown
+## Skills Available
+
+- **api-design**: When creating or modifying API endpoints
+- **database-patterns**: When working with database queries, schemas, or migrations  
+- **testing-strategy**: When writing tests or debugging test failures
+- **deployment**: When deploying or troubleshooting production issues
+```
+
+**Better** - Include importance/priority:
+```markdown
+## Skills Available (Load as Needed)
+
+**Critical** (always follow):
+- **security-patterns**: When handling authentication, authorization, or sensitive data
+
+**Important** (follow for these domains):
+- **api-design**: When creating or modifying API endpoints
+- **database-patterns**: When working with database code
+
+**Helpful** (reference for guidance):
+- **code-style**: For formatting and style preferences
+- **troubleshooting**: When debugging issues
+```
+
+### Managing AGENTS.md Length
+
+**Target**: 50-150 lines total  
+**Hard limit**: 200 lines
+
+If AGENTS.md exceeds these:
+1. Run `python scripts/analyze_context.py` to identify candidates for extraction
+2. Use `python scripts/extract_to_skill.py` to move content to skills
+3. Keep only project-essential information
+4. Reference skills instead of duplicating content
 
 ## Skill Structure Guidelines
 
