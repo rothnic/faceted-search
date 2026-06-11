@@ -1,0 +1,35 @@
+{
+  "name": "search-options-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "api:dev": "node --import tsx apps/api/src/main.ts",
+    "dev": "npm run web:build && npm run api:dev",
+    "web:build": "vite build",
+    "web:dev": "vite --host 127.0.0.1",
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "seed": "node --import tsx scripts/seed.ts",
+    "search:backfill": "node --import tsx scripts/backfill-search.ts",
+    "search:sync-worker": "node --import tsx scripts/search-sync-worker.ts",
+    "search:reset": "node --import tsx scripts/reset-search-indexes.ts",
+    "verify:full-stack": "node --import tsx scripts/verify-full-stack.ts",
+    "stack:full": "npm run web:build && docker compose -f compose/docker-compose.full.yml up --build",
+    "stack:full:detached": "npm run web:build && docker compose -f compose/docker-compose.full.yml up -d --build",
+    "stack:full:down": "docker compose -f compose/docker-compose.full.yml down"
+  },
+  "dependencies": {
+    "@meilisearch/instant-meilisearch": "^0.31.1",
+    "instantsearch.js": "^4.101.1",
+    "pg": "^8.21.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "typesense-instantsearch-adapter": "^3.0.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.20.0",
+    "vite": "^8.0.16"
+  }
+}

@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: search_demo
+    ports:
+      - "5432:5432"
+  typesense:
+    image: typesense/typesense:27.1
+    command: ["--data-dir", "/data", "--api-key", "xyz", "--enable-cors"]
+    ports:
+      - "8108:8108"
+    volumes:
+      - typesense-data:/data
+  sync-worker:
+    image: node:22-alpine
+    working_dir: /workspace
+    command: ["npm", "run", "search:sync-worker"]
+    volumes:
+      - ..:/workspace
+    depends_on:
+      - postgres
+      - typesense
+volumes:
+  typesense-data:

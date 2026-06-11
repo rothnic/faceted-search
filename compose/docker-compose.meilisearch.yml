@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: search_demo
+    ports:
+      - "5432:5432"
+  meilisearch:
+    image: getmeili/meilisearch:v1.11
+    environment:
+      MEILI_ENV: development
+    ports:
+      - "7700:7700"
+  sync-worker:
+    image: node:22-alpine
+    working_dir: /workspace
+    command: ["npm", "run", "search:sync-worker"]
+    volumes:
+      - ..:/workspace
+    depends_on:
+      - postgres
+      - meilisearch

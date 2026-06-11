@@ -1,0 +1,9 @@
+services:
+  postgres:
+    image: paradedb/paradedb:latest
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: search_demo
+    ports:
+      - "5432:5432"
