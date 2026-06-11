@@ -1,6 +1,7 @@
 import instantsearch from 'instantsearch.js';
 import TypesenseInstantSearchAdapter from 'typesense-instantsearch-adapter';
 import { instantMeiliSearch } from '@meilisearch/instant-meilisearch';
+import L from 'leaflet';
 import {
   clearRefinements,
   configure,
@@ -12,6 +13,7 @@ import {
   searchBox,
   stats
 } from 'instantsearch.js/es/widgets';
+import 'leaflet/dist/leaflet.css';
 import './styles.css';
 
 const app = document.querySelector('#app');
@@ -24,6 +26,7 @@ const state = {
   savedSearches: [],
   expandedFacets: {},
   response: null,
+  resultMap: null,
   request: requestFromUrl(),
   sync: null,
   searchRequestId: 0
@@ -438,34 +441,59 @@ function renderRefinements() {
 }
 
 function renderResultMap() {
-  const hitsForMap = state.response?.hits || [];
+  const hitsForMap = state.response?.mapHits || [];
   if (!hitsForMap.length) return '';
-  const lats = hitsForMap.map((hit) => hit.lat);
-  const lngs = hitsForMap.map((hit) => hit.lng);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-  const latRange = Math.max(0.001, maxLat - minLat);
-  const lngRange = Math.max(0.001, maxLng - minLng);
-  const pins = hitsForMap.map((hit, index) => {
-    const x = 8 + ((hit.lng - minLng) / lngRange) * 84;
-    const y = 92 - ((hit.lat - minLat) / latRange) * 84;
-    return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.8"><title>${escapeHtml(hit.title)}</title></circle>
-      <text x="${x.toFixed(2)}" y="${Math.max(6, y - 4).toFixed(2)}">${index + 1}</text>`;
-  }).join('');
   return `
     <section class="result-map" aria-label="Map of visible results">
       <div class="map-head">
         <strong>Map</strong>
-        <span class="stats">${hitsForMap.length} visible results</span>
+        <span class="stats">${hitsForMap.length} matching listings</span>
       </div>
-      <svg viewBox="0 0 100 100" role="img" aria-label="Relative map of visible search results">
-        <rect x="1" y="1" width="98" height="98" rx="4"></rect>
-        ${pins}
-      </svg>
+      <div id="result-map" class="leaflet-result-map" role="img" aria-label="Interactive map of matching search results"></div>
     </section>
   `;
+}
+
+function renderLeafletMap() {
+  const mapElement = document.querySelector('#result-map');
+  if (state.resultMap) {
+    state.resultMap.remove();
+    state.resultMap = null;
+  }
+  if (!mapElement || !state.response?.mapHits?.length) return;
+
+  const map = L.map(mapElement, {
+    scrollWheelZoom: false,
+    zoomControl: true
+  });
+  state.resultMap = map;
+
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  const bounds = [];
+  for (const hit of state.response.mapHits) {
+    const point = [hit.lat, hit.lng];
+    bounds.push(point);
+    L.circleMarker(point, {
+      radius: 6,
+      color: '#084298',
+      weight: 2,
+      fillColor: '#0d6efd',
+      fillOpacity: 0.82
+    })
+      .bindPopup(`
+        <strong>${escapeHtml(hit.title)}</strong><br />
+        ${currency(hit.price)}<br />
+        ${escapeHtml(hit.city)}${hit.neighborhood ? `, ${escapeHtml(hit.neighborhood)}` : ''}
+      `)
+      .addTo(map);
+  }
+
+  if (bounds.length === 1) map.setView(bounds[0], 13);
+  else map.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 });
 }
 
 function renderResults() {
@@ -649,6 +677,7 @@ function renderSearchPage() {
   document.querySelector('#search-debug').innerHTML = renderDebug();
   wireSearchContent();
   updateSearchSuggestions();
+  renderLeafletMap();
 }
 
 async function renderSavedSearches() {

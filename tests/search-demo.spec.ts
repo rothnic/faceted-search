@@ -25,12 +25,24 @@ test('debounced search updates results and filters without replacing the focused
 });
 
 test('search suggestions appear while typing and can apply a query', async ({ page }) => {
-  await page.goto('/search');
+  await page.goto('/search?q=hampton%20cove%20garage');
+  await expect(page.locator('.leaflet-container')).toBeVisible();
+
   const searchBox = page.getByRole('textbox', { name: 'Search' });
   await searchBox.fill('gar');
 
-  await expect(page.getByRole('button', { name: /garage\s+Amenity/i })).toBeVisible();
-  await page.getByRole('button', { name: /garage\s+Amenity/i }).click();
+  const garageSuggestion = page.getByRole('button', { name: /garage\s+Amenity/i });
+  await expect(garageSuggestion).toBeVisible();
+  await expect.poll(async () => garageSuggestion.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return {
+      inSuggestions: Boolean(target?.closest('.suggestions')),
+      inLeaflet: Boolean(target?.closest('.leaflet-container'))
+    };
+  })).toEqual({ inSuggestions: true, inLeaflet: false });
+
+  await garageSuggestion.click();
   await expect(searchBox).toHaveValue('garage');
   await expect(page.getByRole('button', { name: /q: garage/i })).toBeVisible();
 });
@@ -95,8 +107,10 @@ test('top refinement chips can clear individual filters when their text is click
 
 test('result map renders and hit amenity chips apply filters', async ({ page }) => {
   await page.goto('/search?q=hampton%20cove%20garage');
-  await expect(page.getByRole('img', { name: /Relative map of visible search results/i })).toBeVisible();
-  await expect(page.locator('.result-map circle')).not.toHaveCount(0);
+  await expect(page.getByRole('img', { name: /Interactive map of matching search results/i })).toBeVisible();
+  await expect(page.locator('.leaflet-container')).toBeVisible();
+  await expect(page.locator('.leaflet-interactive')).toHaveCount(47);
+  await expect(page.locator('.result')).toHaveCount(12);
 
   const hampton = page.locator('.result[data-house-id="target-hampton-cove-garage"]');
   await hampton.getByRole('button', { name: 'garage' }).click();

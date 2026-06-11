@@ -26,7 +26,7 @@ body {
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 40;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -78,6 +78,8 @@ nav a:hover {
 }
 
 .toolbar {
+  position: relative;
+  z-index: 30;
   display: grid;
   grid-template-columns: minmax(190px, 220px) minmax(260px, 1fr) minmax(260px, 300px) minmax(160px, 180px);
   gap: 12px;
@@ -87,6 +89,8 @@ nav a:hover {
 }
 
 .layout {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: 310px minmax(0, 1fr) 360px;
   gap: 14px;
@@ -109,6 +113,7 @@ nav a:hover {
 
 .search-field {
   position: relative;
+  z-index: 1100;
 }
 
 label,
@@ -181,7 +186,7 @@ button:disabled {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  z-index: 5;
+  z-index: 1200;
   display: grid;
   gap: 4px;
   max-height: 300px;
@@ -349,28 +354,13 @@ button:disabled {
   align-items: baseline;
 }
 
-.result-map svg {
+.leaflet-result-map {
   width: 100%;
   height: 180px;
   display: block;
-}
-
-.result-map rect {
-  fill: #eef2f6;
-  stroke: var(--line);
-}
-
-.result-map circle {
-  fill: var(--accent);
-  stroke: #fff;
-  stroke-width: 1.2;
-}
-
-.result-map text {
-  fill: var(--text);
-  font-size: 5px;
-  font-weight: 700;
-  text-anchor: middle;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
 
 .result-list {

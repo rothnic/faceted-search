@@ -71,10 +71,13 @@ export type HouseSearchHit = House & {
   matchedTerms: string[];
 };
 
+export type HouseSearchMapHit = Pick<HouseSearchHit, 'id' | 'title' | 'lat' | 'lng' | 'price' | 'city' | 'neighborhood'>;
+
 export type HouseSearchResponse = {
   provider: SearchProviderId;
   providerLabel: string;
   hits: HouseSearchHit[];
+  mapHits: HouseSearchMapHit[];
   totalHits: number;
   page: number;
   pageSize: number;

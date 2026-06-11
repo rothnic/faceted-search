@@ -8,6 +8,7 @@ import type { House } from '../../../packages/domain/src/house.types.js';
 import type {
   FacetBucket,
   HouseSearchHit,
+  HouseSearchMapHit,
   HouseSearchRequest,
   HouseSearchResponse,
   SearchProviderCapabilities,
@@ -348,6 +349,7 @@ async function performSearch(request: HouseSearchRequest): Promise<HouseSearchRe
   const started = performance.now();
   const provider = providerMeta(request.provider);
   const scopeIds = await savedSearchScopeIds(request.savedSearchIds);
+  const mapHits = await mapHitsForRequest(request, scopeIds);
   if (scopeIds) {
     return localSearchResponse(request, provider, started, scopeIds, [
       'Saved-search scopes are ORed together, then the active query and filters narrow that scoped result set.'
@@ -360,6 +362,7 @@ async function performSearch(request: HouseSearchRequest): Promise<HouseSearchRe
         provider: provider.id,
         providerLabel: provider.label,
         hits: external.hits,
+        mapHits,
         totalHits: external.totalHits,
         page: Math.max(1, request.page || 1),
         pageSize: Math.max(1, Math.min(50, request.pageSize || 12)),
@@ -401,6 +404,22 @@ function savedSearchMatches(search: SavedHouseSearch, searchableHouses: House[])
   return filterHouses(criteria, searchableHouses);
 }
 
+function toMapHits(hits: HouseSearchHit[]): HouseSearchMapHit[] {
+  return hits.map((hit) => ({
+    id: hit.id,
+    title: hit.title,
+    lat: hit.lat,
+    lng: hit.lng,
+    price: hit.price,
+    city: hit.city,
+    neighborhood: hit.neighborhood
+  }));
+}
+
+async function mapHitsForRequest(request: HouseSearchRequest, scopeIds?: Set<string>) {
+  return toMapHits(sortedHits(filterHouses(request, await currentHouses(), scopeIds), request));
+}
+
 async function localSearchResponse(
   request: HouseSearchRequest,
   provider: ProviderMeta,
@@ -418,6 +437,7 @@ async function localSearchResponse(
     provider: provider.id,
     providerLabel: provider.label,
     hits,
+    mapHits: toMapHits(sorted),
     totalHits: allMatches.length,
     page,
     pageSize,

@@ -43,7 +43,7 @@ Provider debug output shows the SQL or search-engine request shape each mode wou
 
 - **Geo presets** - Radius filters model location-aware search around Huntsville, Madison, and Redstone Arsenal.
 - **Viewport filter** - A sample map viewport constraint demonstrates bounding-box filtering.
-- **Result map** - A lightweight map shows the current page of visible listing locations.
+- **Result map** - Leaflet and OpenStreetMap tiles show all matching listing locations, not just the current page.
 - **Sync controls** - Backfill and worker buttons demonstrate external-index synchronization for Meilisearch and Typesense.
 
 ## Screenshots
