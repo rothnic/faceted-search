@@ -114,12 +114,36 @@ test('result map renders and hit amenity chips apply filters', async ({ page }) 
   await expect(page.locator('.map-legend')).toContainText('Land');
   const markerColors = await page.locator('.leaflet-interactive').evaluateAll((markers) => [...new Set(markers.map((marker) => marker.getAttribute('fill')))]);
   expect(markerColors.length).toBeGreaterThan(1);
-  await expect(page.locator('.result')).toHaveCount(12);
+  const scroller = page.locator('#result-list-scroll');
+  await expect(scroller).toBeVisible();
+  await expect(scroller).toHaveAttribute('data-loaded-count', '18');
+  await expect(scroller).toHaveAttribute('data-total-count', '47');
+  const renderedRows = await page.locator('.virtual-row').count();
+  expect(renderedRows).toBeLessThan(18);
 
   const hampton = page.locator('.result[data-house-id="target-hampton-cove-garage"]');
   await hampton.getByRole('button', { name: 'garage' }).click();
   await expect(page.getByRole('button', { name: /amenities: garage/i })).toBeVisible();
   await expect(page.locator('.facet-group[data-facet="amenities"]').getByLabel(/garage/i)).toBeChecked();
+});
+
+test('virtualized results append pages with infinite scroll', async ({ page }) => {
+  await page.goto('/search?q=hampton%20cove%20garage');
+  const scroller = page.locator('#result-list-scroll');
+  await expect(scroller).toHaveAttribute('data-loaded-count', '18');
+
+  await scroller.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(scroller).toHaveAttribute('data-loaded-count', '36');
+
+  await scroller.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(scroller).toHaveAttribute('data-loaded-count', '47');
+  await expect(page.locator('[data-virtual-summary]')).toContainText('All 47 matching listings loaded');
+  const renderedRows = await page.locator('.virtual-row').count();
+  expect(renderedRows).toBeLessThan(47);
 });
 
 test('clicking a hit opens a structured details overlay', async ({ page }) => {

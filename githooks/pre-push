@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+npm run screenshots:update
+
+if ! git diff --quiet -- docs/screenshots README.md; then
+  echo "Screenshots or README changed during pre-push." >&2
+  echo "Review and commit the generated files, then push again." >&2
+  git status --short -- docs/screenshots README.md >&2
+  exit 1
+fi

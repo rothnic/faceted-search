@@ -9,6 +9,7 @@
     "web:dev": "vite --host 127.0.0.1",
     "test": "playwright test",
     "typecheck": "tsc --noEmit",
+    "screenshots:update": "node --import tsx scripts/capture-screenshots.ts",
     "seed": "node --import tsx scripts/seed.ts",
     "search:backfill": "node --import tsx scripts/backfill-search.ts",
     "search:sync-worker": "node --import tsx scripts/search-sync-worker.ts",
@@ -20,6 +21,7 @@
   },
   "dependencies": {
     "@meilisearch/instant-meilisearch": "^0.31.1",
+    "@tanstack/virtual-core": "^3.17.0",
     "instantsearch.js": "^4.101.1",
     "leaflet": "^1.9.4",
     "pg": "^8.21.0",

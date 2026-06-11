@@ -3,6 +3,13 @@ import TypesenseInstantSearchAdapter from 'typesense-instantsearch-adapter';
 import { instantMeiliSearch } from '@meilisearch/instant-meilisearch';
 import L from 'leaflet';
 import {
+  Virtualizer,
+  elementScroll,
+  measureElement,
+  observeElementOffset,
+  observeElementRect
+} from '@tanstack/virtual-core';
+import {
   clearRefinements,
   configure,
   currentRefinements,
@@ -18,6 +25,7 @@ import './styles.css';
 
 const app = document.querySelector('#app');
 const FACET_VISIBLE_LIMIT = 6;
+const RESULT_PAGE_SIZE = 18;
 const PROPERTY_TYPE_STYLES = {
   single_family: { color: '#2563eb', label: 'Single family' },
   townhouse: { color: '#059669', label: 'Townhouse' },
@@ -34,6 +42,9 @@ const state = {
   expandedFacets: {},
   response: null,
   resultMap: null,
+  resultVirtualizer: null,
+  resultVirtualCleanup: null,
+  isLoadingMore: false,
   selectedHitId: null,
   request: requestFromUrl(),
   sync: null,
@@ -57,7 +68,7 @@ function requestFromUrl() {
     },
     sort: params.get('sort') || 'relevance',
     page: Number(params.get('page') || 1),
-    pageSize: 12,
+    pageSize: RESULT_PAGE_SIZE,
     includeFacets: true,
     savedSearchIds: params.getAll('savedSearchId')
   };
@@ -214,7 +225,7 @@ function applySavedSearchOnly(id) {
     filters: {},
     sort: 'relevance',
     page: 1,
-    pageSize: 12,
+    pageSize: RESULT_PAGE_SIZE,
     includeFacets: true,
     savedSearchIds: [id]
   };
@@ -259,7 +270,7 @@ function clearFilters() {
     filters: {},
     sort: 'relevance',
     page: 1,
-    pageSize: 12,
+    pageSize: RESULT_PAGE_SIZE,
     includeFacets: true,
     savedSearchIds: []
   };
@@ -286,14 +297,20 @@ function toggleViewport(checked) {
 
 function openHitDetails(id) {
   state.selectedHitId = id;
-  renderSearchPage();
+  syncHitDialog();
   document.querySelector('.detail-dialog')?.focus?.();
 }
 
 function closeHitDetails() {
   if (!state.selectedHitId) return;
   state.selectedHitId = null;
-  renderSearchPage();
+  syncHitDialog();
+}
+
+function syncHitDialog() {
+  const existingDialog = document.querySelector('.modal-backdrop');
+  if (existingDialog) existingDialog.remove();
+  app.insertAdjacentHTML('beforeend', renderHitDialog());
 }
 
 function requestBody() {
@@ -311,6 +328,8 @@ function scheduleSearch() {
 
 async function runSearch() {
   const requestId = ++state.searchRequestId;
+  state.isLoadingMore = false;
+  state.selectedHitId = null;
   syncUrl();
   const [response] = await Promise.all([
     api('/api/search', { method: 'POST', body: JSON.stringify(requestBody()) }),
@@ -616,10 +635,35 @@ function renderHitDialog() {
   `;
 }
 
+function renderResultCard(hit) {
+  return `
+    <article class="result" data-house-id="${hit.id}" data-open-hit="${hit.id}" tabindex="0">
+      <div class="result-topline">
+        <span class="result-type" style="--type-color:${propertyTypeStyle(hit.propertyType).color}">${escapeHtml(propertyTypeStyle(hit.propertyType).label)}</span>
+        <span class="status-pill">${titleLabel(hit.listingStatus)}</span>
+      </div>
+      <h3>${escapeHtml(hit.title)}</h3>
+      <div class="meta">
+        <span>${currency(hit.price)}</span>
+        <span>${hit.bedrooms} bd</span>
+        <span>${hit.bathrooms} ba</span>
+        <span>${hit.squareFeet.toLocaleString()} sqft</span>
+        <span>${hit.city}${hit.neighborhood ? `, ${hit.neighborhood}` : ''}</span>
+        <span>${hit.schoolDistrict || ''}</span>
+        ${hit.distanceMiles !== undefined ? `<span>${hit.distanceMiles.toFixed(1)} mi away</span>` : ''}
+      </div>
+      <p>${escapeHtml(hit.description)}</p>
+      <div class="result-actions">
+        <div class="amenities">${hit.amenities.map((item) => `<button type="button" class="pill hit-chip" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div>
+        <button type="button" class="button-link" data-open-hit="${hit.id}">Details</button>
+      </div>
+    </article>
+  `;
+}
+
 function renderResults() {
   const response = state.response;
   if (!response) return '<section class="panel">Loading results...</section>';
-  const totalPages = Math.max(1, Math.ceil(response.totalHits / response.pageSize));
   return `
     <section class="panel">
       <div class="results-head">
@@ -631,37 +675,130 @@ function renderResults() {
       </div>
       ${renderRefinements()}
       ${renderResultMap()}
-      <div class="result-list">
-        ${response.hits.map((hit) => `
-          <article class="result" data-house-id="${hit.id}" data-open-hit="${hit.id}" tabindex="0">
-            <div class="result-topline">
-              <span class="result-type" style="--type-color:${propertyTypeStyle(hit.propertyType).color}">${escapeHtml(propertyTypeStyle(hit.propertyType).label)}</span>
-              <span class="status-pill">${titleLabel(hit.listingStatus)}</span>
-            </div>
-            <h3>${escapeHtml(hit.title)}</h3>
-            <div class="meta">
-              <span>${currency(hit.price)}</span>
-              <span>${hit.bedrooms} bd</span>
-              <span>${hit.bathrooms} ba</span>
-              <span>${hit.squareFeet.toLocaleString()} sqft</span>
-              <span>${hit.city}${hit.neighborhood ? `, ${hit.neighborhood}` : ''}</span>
-              <span>${hit.schoolDistrict || ''}</span>
-              ${hit.distanceMiles !== undefined ? `<span>${hit.distanceMiles.toFixed(1)} mi away</span>` : ''}
-            </div>
-            <p>${escapeHtml(hit.description)}</p>
-            <div class="result-actions">
-              <div class="amenities">${hit.amenities.map((item) => `<button type="button" class="pill hit-chip" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div>
-              <button type="button" class="button-link" data-open-hit="${hit.id}">Details</button>
-            </div>
-          </article>
-        `).join('') || '<p>No listings match this search. You can still save it.</p>'}
-      </div>
-      <div class="action-row">
-        <button id="prev-page" ${response.page <= 1 ? 'disabled' : ''}>Previous</button>
-        <button id="next-page" ${response.page >= totalPages ? 'disabled' : ''}>Next</button>
-      </div>
+      ${response.hits.length ? `
+        <div class="virtual-summary stats" data-virtual-summary>Showing ${response.hits.length} of ${response.totalHits} loaded listings</div>
+        <div id="result-list-scroll" class="result-list-scroll" data-loaded-count="${response.hits.length}" data-total-count="${response.totalHits}">
+          <div id="result-list-spacer" class="result-list-spacer"></div>
+        </div>
+      ` : '<p>No listings match this search. You can still save it.</p>'}
     </section>
   `;
+}
+
+function hasNextResultsPage() {
+  return Boolean(state.response && state.response.hits.length < state.response.totalHits);
+}
+
+function loadedResultsStatus() {
+  if (!state.response) return '';
+  if (state.isLoadingMore) return `Loading more listings... ${state.response.hits.length} of ${state.response.totalHits} loaded`;
+  if (hasNextResultsPage()) return `${state.response.hits.length} of ${state.response.totalHits} loaded. Scroll for more.`;
+  return `All ${state.response.totalHits} matching listings loaded.`;
+}
+
+function renderVirtualRows() {
+  const scrollElement = document.querySelector('#result-list-scroll');
+  const spacer = document.querySelector('#result-list-spacer');
+  const summary = document.querySelector('[data-virtual-summary]');
+  const virtualizer = state.resultVirtualizer;
+  if (!scrollElement || !spacer || !virtualizer || !state.response) return;
+
+  const hits = state.response.hits;
+  const virtualItems = virtualizer.getVirtualItems();
+  spacer.style.height = `${virtualizer.getTotalSize()}px`;
+  spacer.innerHTML = virtualItems.map((virtualRow) => {
+    const hit = hits[virtualRow.index];
+    const isLoader = !hit;
+    return `
+      <div
+        class="virtual-row ${isLoader ? 'virtual-loader' : ''}"
+        data-index="${virtualRow.index}"
+        style="transform: translateY(${virtualRow.start}px);"
+      >
+        ${hit ? renderResultCard(hit) : `<div class="result loading-row">${loadedResultsStatus()}</div>`}
+      </div>
+    `;
+  }).join('');
+
+  spacer.querySelectorAll('.virtual-row').forEach((row) => virtualizer.measureElement(row));
+  scrollElement.dataset.loadedCount = String(hits.length);
+  scrollElement.dataset.totalCount = String(state.response.totalHits);
+  if (summary) summary.textContent = loadedResultsStatus();
+  maybeLoadMoreResults();
+}
+
+function virtualizerOptions(scrollElement) {
+  const count = state.response ? state.response.hits.length + (hasNextResultsPage() ? 1 : 0) : 0;
+  return {
+    count,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => 178,
+    overscan: 5,
+    gap: 10,
+    getItemKey: (index) => state.response?.hits[index]?.id ?? `loader-${state.response?.totalHits ?? 0}`,
+    scrollToFn: elementScroll,
+    observeElementRect,
+    observeElementOffset,
+    measureElement,
+    onChange: () => renderVirtualRows()
+  };
+}
+
+function setupVirtualizedResults() {
+  state.resultVirtualCleanup?.();
+  state.resultVirtualCleanup = null;
+  state.resultVirtualizer = null;
+
+  const scrollElement = document.querySelector('#result-list-scroll');
+  if (!scrollElement || !state.response?.hits.length) return;
+
+  const virtualizer = new Virtualizer(virtualizerOptions(scrollElement));
+  state.resultVirtualizer = virtualizer;
+  virtualizer._willUpdate();
+  state.resultVirtualCleanup = virtualizer._didMount();
+  renderVirtualRows();
+}
+
+function updateVirtualizedResults() {
+  const scrollElement = document.querySelector('#result-list-scroll');
+  if (!scrollElement || !state.resultVirtualizer) return;
+  state.resultVirtualizer.setOptions(virtualizerOptions(scrollElement));
+  state.resultVirtualizer._willUpdate();
+  renderVirtualRows();
+}
+
+function maybeLoadMoreResults() {
+  if (!state.resultVirtualizer || !hasNextResultsPage() || state.isLoadingMore) return;
+  const lastItem = [...state.resultVirtualizer.getVirtualItems()].at(-1);
+  if (!lastItem || !state.response) return;
+  if (lastItem.index >= state.response.hits.length - 1) loadMoreResults();
+}
+
+async function loadMoreResults() {
+  if (!state.response || state.isLoadingMore || !hasNextResultsPage()) return;
+  const requestId = state.searchRequestId;
+  state.isLoadingMore = true;
+  renderVirtualRows();
+  try {
+    const nextPage = Math.floor(state.response.hits.length / state.response.pageSize) + 1;
+    const nextResponse = await api('/api/search', {
+      method: 'POST',
+      body: JSON.stringify({ ...requestBody(), page: nextPage, includeFacets: false })
+    });
+    if (requestId !== state.searchRequestId || !state.response) return;
+    const existingIds = new Set(state.response.hits.map((hit) => hit.id));
+    const nextHits = nextResponse.hits.filter((hit) => !existingIds.has(hit.id));
+    state.response = {
+      ...state.response,
+      hits: [...state.response.hits, ...nextHits],
+      page: nextResponse.page,
+      totalHits: nextResponse.totalHits,
+      processingTimeMs: nextResponse.processingTimeMs
+    };
+  } finally {
+    state.isLoadingMore = false;
+    updateVirtualizedResults();
+  }
 }
 
 function renderDebug() {
@@ -817,12 +954,11 @@ function renderSearchPage() {
   document.querySelector('#search-filters').innerHTML = renderFilters();
   document.querySelector('#search-results').innerHTML = renderResults();
   document.querySelector('#search-debug').innerHTML = renderDebug();
-  const existingDialog = document.querySelector('.modal-backdrop');
-  if (existingDialog) existingDialog.remove();
-  app.insertAdjacentHTML('beforeend', renderHitDialog());
+  syncHitDialog();
   wireSearchContent();
   updateSearchSuggestions();
   renderLeafletMap();
+  setupVirtualizedResults();
 }
 
 async function renderSavedSearches() {
