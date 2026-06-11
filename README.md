@@ -4,16 +4,47 @@ Runnable TypeScript demo for comparing faceted, geo-aware, semantic, and saved-s
 
 The app is intentionally small enough to inspect end to end: a Node API/static server, a Vite-bundled frontend, shared search contracts, deterministic fixtures, sync/backfill scripts, and Playwright coverage.
 
-## What It Demonstrates
+## Search Options
 
-- Faceted search with bounded filter groups, selected-value preservation, and live facet counts.
-- Debounced search updates that keep the search box focused while results and filters refresh.
-- Search suggestions from listing titles, saved searches, cities, neighborhoods, amenities, and property types.
-- Saved searches that can be applied from the filter panel; multiple saved searches are ORed together, then active filters narrow that scoped set.
-- Result chips that can be clicked to apply filters, such as applying the `garage` amenity from a listing card.
-- Basic map visualization for the currently visible result page.
-- Provider comparison across native PostgreSQL, PostgreSQL plus `pg_search`, Meilisearch, and Typesense.
-- External-index sync modeling with backfill and worker controls.
+| Option | Backend shape | Implemented behavior |
+| --- | --- | --- |
+| Native PostgreSQL | Source-of-truth database with simulated PostGIS and pgvector-style ranking | Keyword, semantic, and hybrid scoring; manual facets; range filters; geo radius; distance sorting; saved-search evaluation |
+| PostgreSQL with `pg_search` | Postgres-hosted search extension strategy | Same frontend contract as native Postgres, with debug output showing the `pg_search`/BM25 request shape |
+| PostgreSQL plus Meilisearch | External search index synchronized from Postgres | Facets, range filters, geo filtering/sorting, hybrid search shape, direct InstantSearch demo, backfill, and sync-worker controls |
+| PostgreSQL plus Typesense | External search collection synchronized from Postgres | Faceted collection schema, geopoint and vector-query shape, direct InstantSearch demo, backfill, and sync-worker controls |
+
+Provider debug output shows the SQL or search-engine request shape each mode would use in a production-backed stack. If Meilisearch or Typesense is unavailable, provider searches fall back to the local Postgres-backed scorer and include an explicit warning in the debug panel.
+
+## Features
+
+### Search Experience
+
+- **Debounced updates** - Search text updates results, facets, and debug output without replacing the focused search box.
+- **Search suggestions** - Suggestions come from listing titles, saved-search names, cities, neighborhoods, amenities, and property types.
+- **Search modes** - Keyword, semantic, and hybrid modes share the same frontend contract across all provider strategies.
+- **Sort modes** - Results can be sorted by relevance, distance, price, or newest update.
+
+### Filtering And Facets
+
+- **Facet rail** - City, neighborhood, school district, property type, bedrooms, amenities, and listing status are exposed as left-rail filters.
+- **Bounded facet lists** - Long facet groups are capped by default with a show-more control, while selected values remain visible.
+- **Range filters** - Price, square feet, lot size, and year-built filters update the same search contract as categorical facets.
+- **Removable chips** - Active query, saved-search, facet, range, geo, and viewport refinements appear above results and can be removed in place.
+- **Clickable result chips** - Listing chips such as `garage` can apply matching filters directly from a result card.
+
+### Saved Searches
+
+- **Live counts** - Saved searches display current match counts in the filter rail.
+- **OR scoping** - Selecting multiple saved searches ORs their result sets together before manual filters narrow the visible content.
+- **Save in place** - Saving the current query and manual filters adds the new saved search to the filter rail, selects it, and keeps the user on `/search`.
+- **Zero-hit support** - Searches with no current results can still be saved and reevaluated later.
+
+### Geo And Provider Operations
+
+- **Geo presets** - Radius filters model location-aware search around Huntsville, Madison, and Redstone Arsenal.
+- **Viewport filter** - A sample map viewport constraint demonstrates bounding-box filtering.
+- **Result map** - A lightweight map shows the current page of visible listing locations.
+- **Sync controls** - Backfill and worker buttons demonstrate external-index synchronization for Meilisearch and Typesense.
 
 ## Screenshots
 
@@ -32,15 +63,6 @@ The app is intentionally small enough to inspect end to end: a Node API/static s
 ### Provider Comparison
 
 ![Provider capability comparison page](docs/screenshots/provider-comparison.png)
-
-## Provider Modes
-
-- Native PostgreSQL
-- PostgreSQL with `pg_search`
-- PostgreSQL plus Meilisearch
-- PostgreSQL plus Typesense
-
-Provider debug output shows the SQL or search-engine request shape each mode would use in a production-backed stack. If Meilisearch or Typesense is unavailable, provider searches fall back to the local Postgres-backed scorer and include an explicit warning in the debug panel.
 
 ## Run Locally
 
@@ -118,4 +140,3 @@ tests                     Playwright browser coverage
 docs                      Specification, implementation notes, and screenshots
 compose                   Docker Compose stacks for provider experiments
 ```
-
