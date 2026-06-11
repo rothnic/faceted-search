@@ -63,14 +63,34 @@ test('facets, range filters, geo radius, and distance sort update results', asyn
   await expect(page.getByText(/minPrice: 250000/i)).toBeVisible();
 });
 
-test('top refinement chips can clear individual filters', async ({ page }) => {
+test('top refinement chips can clear individual filters when their text is clicked', async ({ page, request }) => {
+  const saved = await (await request.post('/api/saved-searches', {
+    data: {
+      name: 'Garage homes chip scope',
+      criteria: { q: 'garage', mode: 'hybrid', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
+    }
+  })).json();
+
   await page.goto('/search?q=home');
   await page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/).check();
-  await expect(page.getByRole('button', { name: /city: Madison/i })).toBeVisible();
+  await page.locator('.facet-group[data-facet="saved-searches"]').getByLabel(/Garage homes chip scope/).check();
 
-  await page.getByRole('button', { name: /city: Madison/i }).click();
+  await expect(page.getByRole('button', { name: /q: home/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /city: Madison/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /saved: Garage homes chip scope/i })).toBeVisible();
+
+  await page.getByRole('button', { name: /city: Madison/i }).getByText(/city: Madison/i).click();
   await expect(page.getByRole('button', { name: /city: Madison/i })).toBeHidden();
   await expect(page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/)).not.toBeChecked();
+
+  await page.getByRole('button', { name: /saved: Garage homes chip scope/i }).getByText(/saved: Garage homes chip scope/i).click();
+  await expect(page.getByRole('button', { name: /saved: Garage homes chip scope/i })).toBeHidden();
+  await expect(page.locator('.facet-group[data-facet="saved-searches"]').getByLabel(/Garage homes chip scope/)).not.toBeChecked();
+
+  await page.getByRole('button', { name: /q: home/i }).getByText(/q: home/i).click();
+  await expect(page.getByRole('button', { name: /q: home/i })).toBeHidden();
+  await expect(page.getByRole('textbox', { name: 'Search' })).toHaveValue('');
+  expect(saved.currentHitCount).toBeGreaterThan(0);
 });
 
 test('result map renders and hit amenity chips apply filters', async ({ page }) => {
@@ -95,7 +115,7 @@ test('facet groups are capped by default and can be expanded', async ({ page }) 
   await expect(amenities.locator('[data-filter="amenities"]')).toHaveCount(6);
 });
 
-test('zero-hit searches can be saved and evaluated later', async ({ page }) => {
+test('zero-hit searches can be saved in place and applied from the filter rail', async ({ page }) => {
   await page.goto('/search');
   await page.getByRole('textbox', { name: 'Search' }).fill('zzzz qqqq xxxx');
   await expect(page.getByText(/No listings match this search/i)).toBeVisible();
@@ -103,12 +123,13 @@ test('zero-hit searches can be saved and evaluated later', async ({ page }) => {
     await dialog.accept('Zero-hit waterfront castle');
   });
   await page.getByRole('button', { name: 'Save search' }).click();
-  await expect(page).toHaveURL(/\/saved-searches/);
-  await expect(page.getByRole('heading', { name: 'Zero-hit waterfront castle' })).toBeVisible();
-  const savedRow = page.locator('.saved-row', { has: page.getByRole('heading', { name: 'Zero-hit waterfront castle' }) });
-  await expect(savedRow.getByText(/0 current hits/i)).toBeVisible();
-  await savedRow.getByRole('button', { name: 'Evaluate now' }).click();
-  await expect(savedRow.getByText(/0 current hits/i)).toBeVisible();
+  await expect(page).toHaveURL(/\/search/);
+  const savedScope = page.locator('.facet-group[data-facet="saved-searches"]');
+  const savedOption = savedScope.locator('.facet-option', { has: page.getByLabel(/Zero-hit waterfront castle/) });
+  await expect(savedOption.locator('[data-saved-search]')).toBeChecked();
+  await expect(savedOption.locator('.count')).toHaveText('0');
+  await expect(page.getByRole('button', { name: /saved: Zero-hit waterfront castle/i })).toBeVisible();
+  await expect(page.getByText(/No listings match this search/i)).toBeVisible();
 });
 
 test('multiple saved searches apply as an OR scope before live filters narrow results', async ({ page, request }) => {
@@ -133,6 +154,78 @@ test('multiple saved searches apply as an OR scope before live filters narrow re
   await page.locator('.facet-group[data-facet="propertyType"]').getByLabel(/condo/i).check();
   await expect(page.getByRole('heading', { name: /Low maintenance condo close to restaurants/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Hampton Cove garage home/i })).toBeHidden();
+});
+
+test('saved search counts are live and multiple applied saved searches OR to the displayed hit total', async ({ page, request }) => {
+  const hampton = await (await request.post('/api/saved-searches', {
+    data: {
+      name: 'Hampton Cove garage scope',
+      criteria: { q: 'hampton cove garage', mode: 'hybrid', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
+    }
+  })).json();
+  const condo = await (await request.post('/api/saved-searches', {
+    data: {
+      name: 'Low maintenance condo scope',
+      criteria: { q: 'low maintenance condo', mode: 'hybrid', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
+    }
+  })).json();
+  const union = await (await request.post('/api/search', {
+    data: {
+      provider: 'postgres_native',
+      q: '',
+      mode: 'hybrid',
+      filters: {},
+      sort: 'relevance',
+      page: 1,
+      pageSize: 12,
+      includeFacets: true,
+      savedSearchIds: [hampton.id, condo.id]
+    }
+  })).json();
+
+  await page.goto('/search');
+  const savedScope = page.locator('.facet-group[data-facet="saved-searches"]');
+  await expect(savedScope.getByText('Saved Searches')).toBeVisible();
+  const hamptonOption = savedScope.locator('.facet-option', { has: page.getByLabel(/Hampton Cove garage scope/) });
+  const condoOption = savedScope.locator('.facet-option', { has: page.getByLabel(/Low maintenance condo scope/) });
+  await expect(hamptonOption.locator('.count')).toHaveText(String(hampton.currentHitCount));
+  await expect(condoOption.locator('.count')).toHaveText(String(condo.currentHitCount));
+  expect(hampton.currentHitCount).toBeGreaterThan(0);
+  expect(condo.currentHitCount).toBeGreaterThan(0);
+
+  await savedScope.getByLabel(/Hampton Cove garage scope/).check();
+  await expect(page.getByText(new RegExp(`${hampton.currentHitCount} hits from Native PostgreSQL`, 'i'))).toBeVisible();
+  await expect(savedScope.locator('.facet-title')).toContainText(`${hampton.currentHitCount} matches`);
+
+  await savedScope.getByLabel(/Low maintenance condo scope/).check();
+  await expect(page.getByText(new RegExp(`${union.totalHits} hits from Native PostgreSQL`, 'i'))).toBeVisible();
+  await expect(savedScope.locator('.facet-title')).toContainText(`${union.totalHits} matches`);
+  await expect(page.getByRole('heading', { name: /Hampton Cove garage home/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Low maintenance condo close to restaurants/i })).toBeVisible();
+});
+
+test('saving manual filters adds and applies the new saved search without leaving the search page', async ({ page }) => {
+  await page.goto('/search');
+  await page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/).check();
+  await page.locator('[data-range="maxPrice"]').fill('350000');
+  await page.locator('[data-range="maxPrice"]').press('Enter');
+  await expect(page.getByText(/10 hits from Native PostgreSQL/i)).toBeVisible();
+
+  page.once('dialog', async (dialog) => {
+    await dialog.accept('Madison under 350k saved in place');
+  });
+  await page.getByRole('button', { name: 'Save search' }).click();
+
+  await expect(page).toHaveURL(/\/search/);
+  await expect(page.getByRole('button', { name: /saved: Madison under 350k saved in place/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /city: Madison/i })).toBeHidden();
+  await expect(page.getByRole('button', { name: /maxPrice: 350000/i })).toBeHidden();
+  await expect(page.getByText(/10 hits from Native PostgreSQL/i)).toBeVisible();
+
+  const savedScope = page.locator('.facet-group[data-facet="saved-searches"]');
+  const savedOption = savedScope.locator('.facet-option', { has: page.getByLabel(/Madison under 350k saved in place/) });
+  await expect(savedOption.locator('[data-saved-search]')).toBeChecked();
+  await expect(savedOption.locator('.count')).toHaveText('10');
 });
 
 test('applying a saved search from the filter panel scopes hits, facets, and its live count', async ({ page, request }) => {
@@ -161,13 +254,6 @@ test('applying a saved search from the filter panel scopes hits, facets, and its
   await expect(page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/)).toBeVisible();
   await expect(page.locator('.facet-group[data-facet="city"]').getByLabel(/Huntsville/)).toBeHidden();
   expect(saved.currentHitCount).toBe(10);
-});
-
-test('never-evaluated saved searches do not show stale zero counts in the filter rail', async ({ page }) => {
-  await page.goto('/search');
-  const savedScope = page.locator('.facet-group[data-facet="saved-searches"]');
-  await expect(savedScope.getByText('saved').first()).toBeVisible();
-  await expect(savedScope.getByText('4+ bedroom house in Madison under $450k with pool 0')).toBeHidden();
 });
 
 test('provider comparison page explains capabilities and sync requirements', async ({ page }) => {

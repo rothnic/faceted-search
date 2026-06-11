@@ -391,10 +391,14 @@ async function savedSearchScopeIds(ids: string[] | undefined): Promise<Set<strin
   const scopedIds = new Set<string>();
   const searchableHouses = await currentHouses();
   for (const search of searches) {
-    const criteria = defaultRequest({ ...search.criteria, savedSearchIds: [] });
-    for (const hit of filterHouses(criteria, searchableHouses)) scopedIds.add(hit.id);
+    for (const hit of savedSearchMatches(search, searchableHouses)) scopedIds.add(hit.id);
   }
   return scopedIds;
+}
+
+function savedSearchMatches(search: SavedHouseSearch, searchableHouses: House[]) {
+  const criteria = defaultRequest({ ...search.criteria, savedSearchIds: [] });
+  return filterHouses(criteria, searchableHouses);
 }
 
 async function localSearchResponse(
@@ -448,6 +452,15 @@ async function savedSearches(): Promise<SavedHouseSearch[]> {
     await writeSavedSearches(seededSavedSearches());
   }
   return JSON.parse(await readFile(savedSearchPath, 'utf8')) as SavedHouseSearch[];
+}
+
+async function savedSearchesWithLiveCounts(): Promise<SavedHouseSearch[]> {
+  const searches = await savedSearches();
+  const searchableHouses = await currentHouses();
+  return searches.map((search) => ({
+    ...search,
+    currentHitCount: savedSearchMatches(search, searchableHouses).length
+  }));
 }
 
 async function writeSavedSearches(searches: SavedHouseSearch[]) {
@@ -599,7 +612,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   }
 
   if (req.method === 'GET' && pathname === '/api/saved-searches') {
-    return send(res, 200, { savedSearches: await savedSearches() });
+    return send(res, 200, { savedSearches: await savedSearchesWithLiveCounts() });
   }
 
   if (req.method === 'POST' && pathname === '/api/saved-searches') {

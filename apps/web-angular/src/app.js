@@ -102,8 +102,7 @@ function savedSearchLabel(id) {
 }
 
 function savedSearchCountLabel(search) {
-  if ((state.request.savedSearchIds || []).includes(search.id) && state.response) return String(state.response.totalHits);
-  return search.lastEvaluatedAt ? String(search.currentHitCount) : 'saved';
+  return String(search.currentHitCount ?? 0);
 }
 
 function filterValue(key, value) {
@@ -181,6 +180,22 @@ function setSavedSearch(id, checked) {
   else current.delete(id);
   state.request.savedSearchIds = [...current];
   state.request.page = 1;
+  runSearch();
+}
+
+function applySavedSearchOnly(id) {
+  state.request = {
+    provider: state.request.provider,
+    q: '',
+    mode: state.request.mode,
+    filters: {},
+    sort: 'relevance',
+    page: 1,
+    pageSize: 12,
+    includeFacets: true,
+    savedSearchIds: [id]
+  };
+  updateToolbarControls();
   runSearch();
 }
 
@@ -360,8 +375,8 @@ function renderFilters() {
       <hr />
       <div class="facet-group" data-facet="saved-searches">
         <div class="facet-title">
-          <strong>Saved search scope</strong>
-          ${savedIds.size ? `<span class="stats">${savedIds.size} active</span>` : ''}
+          <strong>Saved Searches</strong>
+          ${savedIds.size && state.response ? `<span class="stats">${state.response.totalHits} matches</span>` : ''}
         </div>
         ${state.savedSearches.map((search) => `
           <label class="facet-option">
@@ -590,8 +605,10 @@ function wireSearchDelegates() {
     if (target.id === 'save-search') {
       const name = prompt('Saved search name', state.request.q || 'Zero-hit saved search');
       if (!name) return;
-      await api('/api/saved-searches', { method: 'POST', body: JSON.stringify({ name, criteria: requestBody() }) });
-      location.href = '/saved-searches';
+      const saved = await api('/api/saved-searches', { method: 'POST', body: JSON.stringify({ name, criteria: requestBody() }) });
+      await loadSavedSearches();
+      if (!state.savedSearches.some((search) => search.id === saved.id)) state.savedSearches.unshift(saved);
+      applySavedSearchOnly(saved.id);
       return;
     }
     if (target.dataset.backfill) {
