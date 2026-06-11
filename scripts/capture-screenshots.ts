@@ -41,6 +41,28 @@ async function capture(page: Page, path: string) {
   console.log(`captured ${path}`);
 }
 
+async function goto(page: Page, path: string) {
+  await page.goto(path, { waitUntil: 'domcontentloaded' });
+}
+
+async function waitForSearchReady(page: Page, expected?: { loaded?: number; total?: number }) {
+  await page.locator('.leaflet-container').waitFor();
+  await page.locator('.leaflet-interactive').first().waitFor();
+  await page.locator('#result-list-scroll').waitFor();
+  await page.waitForFunction(
+    ({ loaded: expectedLoaded, total: expectedTotal }) => {
+      const element = document.querySelector('#result-list-scroll');
+      const loaded = Number(element?.getAttribute('data-loaded-count') ?? 0);
+      const total = Number(element?.getAttribute('data-total-count') ?? 0);
+      if (!loaded || !total) return false;
+      if (expectedLoaded !== undefined && loaded !== expectedLoaded) return false;
+      if (expectedTotal !== undefined && total !== expectedTotal) return false;
+      return true;
+    },
+    expected ?? {}
+  );
+}
+
 async function main() {
   await ensureServer();
   const browser = await chromium.launch();
@@ -48,32 +70,31 @@ async function main() {
 
   await page.request.post('/api/seed');
 
-  await page.goto('/search?q=hampton%20cove%20garage');
-  await page.locator('.leaflet-container').waitFor();
-  await page.waitForTimeout(1000);
+  await goto(page, '/search?q=hampton%20cove%20garage');
+  await waitForSearchReady(page, { loaded: 18, total: 47 });
   await capture(page, 'docs/screenshots/search-results.png');
 
-  await page.getByRole('textbox', { name: 'Search' }).fill('gar');
-  await page.getByRole('button', { name: /garage\s+Amenity/i }).waitFor();
-  await page.getByText(/35 hits from Native PostgreSQL/i).waitFor();
-  await page.getByText(/18 of 35 loaded/i).waitFor();
-  await page.waitForTimeout(300);
-  await capture(page, 'docs/screenshots/search-suggestions.png');
-
-  await page.goto('/search?q=hampton%20cove%20garage');
   await page.locator('.result[data-house-id="target-hampton-cove-garage"]').click();
   await page.getByRole('dialog', { name: /Hampton Cove garage home/i }).waitFor();
   await capture(page, 'docs/screenshots/hit-details.png');
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: /Hampton Cove garage home/i }).waitFor({ state: 'hidden' });
 
-  await page.goto('/search');
+  await page.getByRole('textbox', { name: 'Search' }).fill('gar');
+  await page.getByRole('button', { name: /garage\s+Amenity/i }).waitFor();
+  await waitForSearchReady(page, { loaded: 18, total: 35 });
+  await capture(page, 'docs/screenshots/search-suggestions.png');
+
+  await goto(page, '/search');
+  await waitForSearchReady(page);
   const saved = page.locator('.facet-group[data-facet="saved-searches"] .facet-option').filter({ hasText: 'Waterfront home near Huntsville' });
   await saved.locator('input').check();
   await page.getByRole('button', { name: /saved: Waterfront home near Huntsville/i }).waitFor();
-  await page.waitForTimeout(1000);
+  await waitForSearchReady(page, { loaded: 18, total: 23 });
   await capture(page, 'docs/screenshots/saved-search-scope.png');
 
-  await page.goto('/providers');
-  await page.waitForTimeout(500);
+  await goto(page, '/providers');
+  await page.getByRole('heading', { name: 'Provider Comparison' }).waitFor();
   await capture(page, 'docs/screenshots/provider-comparison.png');
 
   await browser.close();

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${RUN_SCREENSHOT_PRE_PUSH:-0}" != "1" ]]; then
+  echo "Skipping local screenshot generation. GitHub Actions regenerates screenshot artifacts on push." >&2
+  echo "Set RUN_SCREENSHOT_PRE_PUSH=1 to run npm run screenshots:update before pushing." >&2
+  exit 0
+fi
+
 npm run screenshots:update
 
 if ! git diff --quiet -- docs/screenshots README.md; then
