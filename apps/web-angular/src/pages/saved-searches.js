@@ -1,0 +1,33 @@
+import { api, app, escapeHtml } from '../core.js';
+
+export async function renderSavedSearches() {
+  const data = await api('/api/saved-searches');
+  app.innerHTML = `
+    <section class="panel">
+      <h2>Saved Searches</h2>
+      <p class="stats">Saved criteria are kept even when the current hit count is zero.</p>
+      <div class="saved-list">
+        ${data.savedSearches.map((search) => `
+          <article class="saved-row">
+            <h3>${escapeHtml(search.name)}</h3>
+            <div class="meta">
+              <span>${search.provider}</span>
+              <span>${search.lastEvaluatedAt ? `${search.currentHitCount} current hits` : 'Not evaluated yet'}</span>
+              <span>${search.newMatchesSinceLastEvaluation} new matches</span>
+              <span>${search.lastEvaluatedAt ? `Evaluated ${new Date(search.lastEvaluatedAt).toLocaleString()}` : 'Never evaluated'}</span>
+            </div>
+            <pre>${JSON.stringify(search.criteria, null, 2)}</pre>
+            <div class="action-row">
+              <a class="button-link" href="/search?savedSearchId=${encodeURIComponent(search.id)}">Apply</a>
+              <button data-evaluate="${search.id}">Evaluate now</button>
+            </div>
+          </article>
+        `).join('') || '<p>No saved searches yet.</p>'}
+      </div>
+    </section>
+  `;
+  document.querySelectorAll('[data-evaluate]').forEach((button) => button.addEventListener('click', async () => {
+    await api(`/api/saved-searches/${button.dataset.evaluate}/evaluate`, { method: 'POST', body: '{}' });
+    renderSavedSearches();
+  }));
+}
