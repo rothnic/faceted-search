@@ -18,6 +18,13 @@ import './styles.css';
 
 const app = document.querySelector('#app');
 const FACET_VISIBLE_LIMIT = 6;
+const PROPERTY_TYPE_STYLES = {
+  single_family: { color: '#2563eb', label: 'Single family' },
+  townhouse: { color: '#059669', label: 'Townhouse' },
+  condo: { color: '#7c3aed', label: 'Condo' },
+  multi_family: { color: '#dc2626', label: 'Multi family' },
+  land: { color: '#d97706', label: 'Land' }
+};
 let searchDelegatesWired = false;
 const state = {
   providers: [],
@@ -27,6 +34,7 @@ const state = {
   expandedFacets: {},
   response: null,
   resultMap: null,
+  selectedHitId: null,
   request: requestFromUrl(),
   sync: null,
   searchRequestId: 0
@@ -85,6 +93,18 @@ function currency(value) {
 
 function label(value) {
   return String(value || '').replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('_', ' ');
+}
+
+function titleLabel(value) {
+  return label(value).replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function propertyTypeStyle(type) {
+  return PROPERTY_TYPE_STYLES[type] || { color: '#4b5563', label: titleLabel(type) };
+}
+
+function selectedHit() {
+  return (state.response?.hits || []).find((hit) => hit.id === state.selectedHitId);
 }
 
 function escapeHtml(value) {
@@ -262,6 +282,18 @@ function toggleViewport(checked) {
     : undefined;
   state.request.page = 1;
   runSearch();
+}
+
+function openHitDetails(id) {
+  state.selectedHitId = id;
+  renderSearchPage();
+  document.querySelector('.detail-dialog')?.focus?.();
+}
+
+function closeHitDetails() {
+  if (!state.selectedHitId) return;
+  state.selectedHitId = null;
+  renderSearchPage();
 }
 
 function requestBody() {
@@ -443,11 +475,20 @@ function renderRefinements() {
 function renderResultMap() {
   const hitsForMap = state.response?.mapHits || [];
   if (!hitsForMap.length) return '';
+  const legendTypes = [...new Set(hitsForMap.map((hit) => hit.propertyType))];
   return `
     <section class="result-map" aria-label="Map of visible results">
       <div class="map-head">
-        <strong>Map</strong>
-        <span class="stats">${hitsForMap.length} matching listings</span>
+        <div>
+          <strong>Map</strong>
+          <span class="stats">${hitsForMap.length} matching listings</span>
+        </div>
+        <div class="map-legend" aria-label="Map marker legend">
+          ${legendTypes.map((type) => {
+            const style = propertyTypeStyle(type);
+            return `<span><i style="background:${style.color}"></i>${escapeHtml(style.label)}</span>`;
+          }).join('')}
+        </div>
       </div>
       <div id="result-map" class="leaflet-result-map" role="img" aria-label="Interactive map of matching search results"></div>
     </section>
@@ -476,17 +517,18 @@ function renderLeafletMap() {
   const bounds = [];
   for (const hit of state.response.mapHits) {
     const point = [hit.lat, hit.lng];
+    const style = propertyTypeStyle(hit.propertyType);
     bounds.push(point);
     L.circleMarker(point, {
-      radius: 6,
-      color: '#084298',
-      weight: 2,
-      fillColor: '#0d6efd',
-      fillOpacity: 0.82
+      radius: 4.75,
+      color: '#ffffff',
+      weight: 1.5,
+      fillColor: style.color,
+      fillOpacity: 0.88
     })
       .bindPopup(`
         <strong>${escapeHtml(hit.title)}</strong><br />
-        ${currency(hit.price)}<br />
+        ${currency(hit.price)} · ${escapeHtml(style.label)}<br />
         ${escapeHtml(hit.city)}${hit.neighborhood ? `, ${escapeHtml(hit.neighborhood)}` : ''}
       `)
       .addTo(map);
@@ -494,6 +536,84 @@ function renderLeafletMap() {
 
   if (bounds.length === 1) map.setView(bounds[0], 13);
   else map.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 });
+}
+
+function detailItem(labelText, value) {
+  if (value === undefined || value === null || value === '') return '';
+  return `
+    <div class="detail-item">
+      <dt>${escapeHtml(labelText)}</dt>
+      <dd>${escapeHtml(value)}</dd>
+    </div>
+  `;
+}
+
+function renderHitDialog() {
+  const hit = selectedHit();
+  if (!hit) return '';
+  const coreItems = [
+    ['Price', currency(hit.price)],
+    ['Property type', titleLabel(hit.propertyType)],
+    ['Status', titleLabel(hit.listingStatus)],
+    ['Bedrooms', hit.bedrooms],
+    ['Bathrooms', hit.bathrooms],
+    ['Square feet', hit.squareFeet ? hit.squareFeet.toLocaleString() : '0'],
+    ['Lot acres', hit.lotSizeAcres],
+    ['Year built', hit.yearBuilt]
+  ];
+  const locationItems = [
+    ['Address', `${hit.addressLine1}, ${hit.city} ${hit.zipCode}`],
+    ['Neighborhood', hit.neighborhood],
+    ['School district', hit.schoolDistrict],
+    ['Coordinates', `${hit.lat.toFixed(5)}, ${hit.lng.toFixed(5)}`],
+    ['Distance', hit.distanceMiles !== undefined ? `${hit.distanceMiles.toFixed(1)} mi away` : undefined]
+  ];
+  const searchItems = [
+    ['Matched terms', hit.matchedTerms?.length ? hit.matchedTerms.join(', ') : 'None'],
+    ['Created', new Date(hit.createdAt).toLocaleDateString()],
+    ['Updated', new Date(hit.updatedAt).toLocaleDateString()]
+  ];
+  const style = propertyTypeStyle(hit.propertyType);
+  return `
+    <div class="modal-backdrop" data-close-dialog="true">
+      <section class="detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1">
+        <div class="detail-hero" style="border-color:${style.color}">
+          <div>
+            <span class="result-type" style="--type-color:${style.color}">${escapeHtml(style.label)}</span>
+            <h2 id="detail-title">${escapeHtml(hit.title)}</h2>
+            <p>${escapeHtml(hit.description)}</p>
+          </div>
+          <button type="button" class="icon-button" data-close-dialog="true" aria-label="Close details">x</button>
+        </div>
+        <div class="detail-body">
+          <section>
+            <h3>Structured details</h3>
+            <dl class="detail-grid">${coreItems.map(([key, value]) => detailItem(key, value)).join('')}</dl>
+          </section>
+          <section>
+            <h3>Location</h3>
+            <dl class="detail-grid">${locationItems.map(([key, value]) => detailItem(key, value)).join('')}</dl>
+          </section>
+          <section>
+            <h3>Search metadata</h3>
+            <dl class="detail-grid">${searchItems.map(([key, value]) => detailItem(key, value)).join('')}</dl>
+          </section>
+          <section>
+            <h3>Amenities</h3>
+            <div class="amenities">${hit.amenities.map((item) => `<button type="button" class="pill hit-chip" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div>
+          </section>
+          <section>
+            <h3>Tags</h3>
+            <div class="amenities">${hit.tags.map((item) => `<span class="pill">${label(item)}</span>`).join('') || '<span class="stats">No tags</span>'}</div>
+          </section>
+          <section class="detail-json">
+            <h3>Structured JSON</h3>
+            <pre>${escapeHtml(JSON.stringify(hit, null, 2))}</pre>
+          </section>
+        </div>
+      </section>
+    </div>
+  `;
 }
 
 function renderResults() {
@@ -513,8 +633,12 @@ function renderResults() {
       ${renderResultMap()}
       <div class="result-list">
         ${response.hits.map((hit) => `
-          <article class="result" data-house-id="${hit.id}">
-            <h3>${hit.title}</h3>
+          <article class="result" data-house-id="${hit.id}" data-open-hit="${hit.id}" tabindex="0">
+            <div class="result-topline">
+              <span class="result-type" style="--type-color:${propertyTypeStyle(hit.propertyType).color}">${escapeHtml(propertyTypeStyle(hit.propertyType).label)}</span>
+              <span class="status-pill">${titleLabel(hit.listingStatus)}</span>
+            </div>
+            <h3>${escapeHtml(hit.title)}</h3>
             <div class="meta">
               <span>${currency(hit.price)}</span>
               <span>${hit.bedrooms} bd</span>
@@ -523,10 +647,12 @@ function renderResults() {
               <span>${hit.city}${hit.neighborhood ? `, ${hit.neighborhood}` : ''}</span>
               <span>${hit.schoolDistrict || ''}</span>
               ${hit.distanceMiles !== undefined ? `<span>${hit.distanceMiles.toFixed(1)} mi away</span>` : ''}
-              <span>${label(hit.listingStatus)}</span>
             </div>
-            <p>${hit.description}</p>
-            <div class="amenities">${hit.amenities.map((item) => `<button type="button" class="pill hit-chip" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div>
+            <p>${escapeHtml(hit.description)}</p>
+            <div class="result-actions">
+              <div class="amenities">${hit.amenities.map((item) => `<button type="button" class="pill hit-chip" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div>
+              <button type="button" class="button-link" data-open-hit="${hit.id}">Details</button>
+            </div>
           </article>
         `).join('') || '<p>No listings match this search. You can still save it.</p>'}
       </div>
@@ -610,51 +736,67 @@ function wireSearchDelegates() {
   searchDelegatesWired = true;
   app.addEventListener('click', async (event) => {
     if (!(event.target instanceof Element)) return;
+    if (event.target.dataset.closeDialog && (event.target.classList.contains('modal-backdrop') || event.target.tagName === 'BUTTON')) return closeHitDetails();
     const target = event.target.closest('button');
-    if (!target || !app.contains(target)) return;
 
-    if (target.dataset.searchSuggestion) return applySearchSuggestion(target.dataset.searchSuggestion);
-    if (target.dataset.removeRefinement) return removeRefinement(target);
-    if (target.dataset.hitFilter) return setFilter(target.dataset.hitFilter, target.dataset.value, true);
-    if (target.dataset.toggleFacet) {
-      state.expandedFacets[target.dataset.toggleFacet] = !state.expandedFacets[target.dataset.toggleFacet];
-      return renderSearchPage();
+    if (target && app.contains(target)) {
+      if (target.dataset.openHit) return openHitDetails(target.dataset.openHit);
+      if (target.dataset.searchSuggestion) return applySearchSuggestion(target.dataset.searchSuggestion);
+      if (target.dataset.removeRefinement) return removeRefinement(target);
+      if (target.dataset.hitFilter) return setFilter(target.dataset.hitFilter, target.dataset.value, true);
+      if (target.dataset.toggleFacet) {
+        state.expandedFacets[target.dataset.toggleFacet] = !state.expandedFacets[target.dataset.toggleFacet];
+        return renderSearchPage();
+      }
+      if (target.dataset.geo !== undefined) return applyGeoPreset(target.dataset.geo);
+      if (target.id === 'clear-filters') return clearFilters();
+      if (target.id === 'prev-page') {
+        state.request.page -= 1;
+        return runSearch();
+      }
+      if (target.id === 'next-page') {
+        state.request.page += 1;
+        return runSearch();
+      }
+      if (target.id === 'save-search') {
+        const name = prompt('Saved search name', state.request.q || 'Zero-hit saved search');
+        if (!name) return;
+        const saved = await api('/api/saved-searches', { method: 'POST', body: JSON.stringify({ name, criteria: requestBody() }) });
+        await loadSavedSearches();
+        if (!state.savedSearches.some((search) => search.id === saved.id)) state.savedSearches.unshift(saved);
+        applySavedSearchOnly(saved.id);
+        return;
+      }
+      if (target.dataset.backfill) {
+        await api('/api/sync/backfill', { method: 'POST', body: JSON.stringify({ provider: target.dataset.backfill }) });
+        await runSearch();
+        return;
+      }
+      if (target.id === 'run-worker') {
+        await api('/api/sync/worker/run', { method: 'POST', body: '{}' });
+        await runSearch();
+        return;
+      }
+      if (target.id === 'mark-sold') {
+        const first = state.response?.hits?.[0];
+        if (!first) return;
+        await api(`/api/houses/${first.id}`, { method: 'PATCH', body: JSON.stringify({ listingStatus: 'sold' }) });
+        await runSearch();
+        return;
+      }
     }
-    if (target.dataset.geo !== undefined) return applyGeoPreset(target.dataset.geo);
-    if (target.id === 'clear-filters') return clearFilters();
-    if (target.id === 'prev-page') {
-      state.request.page -= 1;
-      return runSearch();
-    }
-    if (target.id === 'next-page') {
-      state.request.page += 1;
-      return runSearch();
-    }
-    if (target.id === 'save-search') {
-      const name = prompt('Saved search name', state.request.q || 'Zero-hit saved search');
-      if (!name) return;
-      const saved = await api('/api/saved-searches', { method: 'POST', body: JSON.stringify({ name, criteria: requestBody() }) });
-      await loadSavedSearches();
-      if (!state.savedSearches.some((search) => search.id === saved.id)) state.savedSearches.unshift(saved);
-      applySavedSearchOnly(saved.id);
-      return;
-    }
-    if (target.dataset.backfill) {
-      await api('/api/sync/backfill', { method: 'POST', body: JSON.stringify({ provider: target.dataset.backfill }) });
-      await runSearch();
-      return;
-    }
-    if (target.id === 'run-worker') {
-      await api('/api/sync/worker/run', { method: 'POST', body: '{}' });
-      await runSearch();
-      return;
-    }
-    if (target.id === 'mark-sold') {
-      const first = state.response?.hits?.[0];
-      if (!first) return;
-      await api(`/api/houses/${first.id}`, { method: 'PATCH', body: JSON.stringify({ listingStatus: 'sold' }) });
-      await runSearch();
-    }
+
+    const card = event.target.closest('.result[data-open-hit]');
+    if (card && app.contains(card)) return openHitDetails(card.dataset.openHit);
+  });
+  app.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') return closeHitDetails();
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (!(event.target instanceof Element)) return;
+    const card = event.target.closest('.result[data-open-hit]');
+    if (!card || event.target.closest('button')) return;
+    event.preventDefault();
+    openHitDetails(card.dataset.openHit);
   });
 }
 
@@ -675,6 +817,9 @@ function renderSearchPage() {
   document.querySelector('#search-filters').innerHTML = renderFilters();
   document.querySelector('#search-results').innerHTML = renderResults();
   document.querySelector('#search-debug').innerHTML = renderDebug();
+  const existingDialog = document.querySelector('.modal-backdrop');
+  if (existingDialog) existingDialog.remove();
+  app.insertAdjacentHTML('beforeend', renderHitDialog());
   wireSearchContent();
   updateSearchSuggestions();
   renderLeafletMap();

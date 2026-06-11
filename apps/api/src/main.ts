@@ -412,7 +412,9 @@ function toMapHits(hits: HouseSearchHit[]): HouseSearchMapHit[] {
     lng: hit.lng,
     price: hit.price,
     city: hit.city,
-    neighborhood: hit.neighborhood
+    neighborhood: hit.neighborhood,
+    propertyType: hit.propertyType,
+    listingStatus: hit.listingStatus
   }));
 }
 

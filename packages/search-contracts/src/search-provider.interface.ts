@@ -71,7 +71,7 @@ export type HouseSearchHit = House & {
   matchedTerms: string[];
 };
 
-export type HouseSearchMapHit = Pick<HouseSearchHit, 'id' | 'title' | 'lat' | 'lng' | 'price' | 'city' | 'neighborhood'>;
+export type HouseSearchMapHit = Pick<HouseSearchHit, 'id' | 'title' | 'lat' | 'lng' | 'price' | 'city' | 'neighborhood' | 'propertyType' | 'listingStatus'>;
 
 export type HouseSearchResponse = {
   provider: SearchProviderId;

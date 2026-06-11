@@ -110,12 +110,31 @@ test('result map renders and hit amenity chips apply filters', async ({ page }) 
   await expect(page.getByRole('img', { name: /Interactive map of matching search results/i })).toBeVisible();
   await expect(page.locator('.leaflet-container')).toBeVisible();
   await expect(page.locator('.leaflet-interactive')).toHaveCount(47);
+  await expect(page.locator('.map-legend')).toContainText('Single family');
+  await expect(page.locator('.map-legend')).toContainText('Land');
+  const markerColors = await page.locator('.leaflet-interactive').evaluateAll((markers) => [...new Set(markers.map((marker) => marker.getAttribute('fill')))]);
+  expect(markerColors.length).toBeGreaterThan(1);
   await expect(page.locator('.result')).toHaveCount(12);
 
   const hampton = page.locator('.result[data-house-id="target-hampton-cove-garage"]');
   await hampton.getByRole('button', { name: 'garage' }).click();
   await expect(page.getByRole('button', { name: /amenities: garage/i })).toBeVisible();
   await expect(page.locator('.facet-group[data-facet="amenities"]').getByLabel(/garage/i)).toBeChecked();
+});
+
+test('clicking a hit opens a structured details overlay', async ({ page }) => {
+  await page.goto('/search?q=hampton%20cove%20garage');
+
+  await page.locator('.result[data-house-id="target-hampton-cove-garage"]').click();
+  const dialog = page.getByRole('dialog', { name: /Hampton Cove garage home/i });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Structured details')).toBeVisible();
+  await expect(dialog.getByText('Location')).toBeVisible();
+  await expect(dialog.getByText('Structured JSON')).toBeVisible();
+  await expect(dialog.locator('pre')).toContainText('"propertyType": "single_family"');
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
 });
 
 test('facet groups are capped by default and can be expanded', async ({ page }) => {
