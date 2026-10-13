@@ -69,6 +69,18 @@ export function renderLeafletMap() {
   tiles.addTo(map);
 
   let activeMarker;
+  const previewWidth = () => Math.max(160, Math.min(280, map.getSize().x - 34));
+  const resizePreview = (popup) => {
+    const width = previewWidth();
+    if (popup.options.maxWidth === width) return;
+    const content = popup.getElement()?.querySelector('.map-listing-preview');
+    const focused = content?.contains(document.activeElement) ? document.activeElement : null;
+    L.setOptions(popup, {maxWidth:width,minWidth:Math.min(220,width)});
+    // Keep the existing controls/listeners when Leaflet recalculates its content box.
+    popup.setContent(content || popup.getContent());
+    focused?.focus({preventScroll:true});
+  };
+  map.on('resize', () => { if (activeMarker?.isPopupOpen()) resizePreview(activeMarker.getPopup()); });
   const dismissOutside = (event) => {
     if (activeMarker && !activeMarker.getPopup()?.getElement()?.contains(event.target) && event.target !== activeMarker.getElement()) map.closePopup();
   };
@@ -102,15 +114,16 @@ export function renderLeafletMap() {
         <strong class="preview-price">${currency(hit.price)}</strong><h3>${escapeHtml(hit.title)}</h3>
         <p>${escapeHtml(hit.city)} · ${escapeHtml(style.label)}</p>
         <button type="button" class="btn btn-primary btn-sm" data-open-hit="${escapeHtml(hit.id)}">Details</button></div>
-      </article>`, {closeButton:false, maxWidth:280, minWidth:220, autoPanPadding:[16,16]})
+      </article>`, {closeButton:false, maxWidth:previewWidth(), minWidth:Math.min(220,previewWidth()), autoPanPadding:[16,16]})
       .on('popupopen', () => {
         activeMarker = marker;
+        resizePreview(marker.getPopup());
         marker.closeTooltip();
         marker.setStyle({radius:7,weight:3,fillOpacity:1});
         marker.getElement()?.setAttribute('aria-expanded','true');
-        marker.getPopup().getElement().querySelector('.preview-close').addEventListener('click', () => {
+        marker.getPopup().getElement().querySelector('.preview-close').onclick = () => {
           map.closePopup(); marker.getElement()?.focus();
-        }, {once:true});
+        };
       })
       .on('popupclose', () => {
         if (activeMarker === marker) activeMarker = null;

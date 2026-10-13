@@ -30,7 +30,10 @@ async function capture(page: Page, path: string) {
     if (diagnostic.debug?.warnings?.length) throw new Error(`Refusing ${path}: search returned warnings: ${diagnostic.debug.warnings.join('; ')}`);
     executionEvidence.push({path,request:diagnostic.request,debug:diagnostic.debug});
   }
-  if (await page.locator('#result-map').isVisible()) await waitForMapTiles(page);
+  if (await page.locator('#result-map').isVisible()) {
+    if (await page.locator('.map-listing-preview').isVisible()) await waitForMapPreview(page);
+    await waitForMapTiles(page);
+  }
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path, fullPage: false });
   await writeFile(`${outputDir}/native-execution-evidence.json`, JSON.stringify(executionEvidence, null, 2));
@@ -97,6 +100,24 @@ async function waitForMapTiles(page: Page) {
   }
 }
 
+async function waitForMapPreview(page: Page) {
+  try {
+    await page.waitForFunction(() => {
+      const map=document.querySelector('#result-map'), preview=map?.querySelector('.map-listing-preview');
+      if (!map || !preview || map.querySelector('.leaflet-pan-anim,.leaflet-zoom-anim')) return false;
+      const m=map.getBoundingClientRect();
+      return [preview,...preview.querySelectorAll('button')].every(element => {
+        const p=element.getBoundingClientRect();
+        return p.left>=m.left && p.right<=m.right && p.top>=m.top && p.bottom<=m.bottom;
+      });
+    }, undefined, {timeout:10_000});
+  } catch (error) {
+    const bounds=await page.evaluate(()=>({map:document.querySelector('#result-map')?.getBoundingClientRect().toJSON(),preview:document.querySelector('.map-listing-preview')?.getBoundingClientRect().toJSON(),animated:!!document.querySelector('#result-map .leaflet-pan-anim,#result-map .leaflet-zoom-anim')}));
+    await writeFile(`${outputDir}/map-preview-failure.json`,JSON.stringify(bounds,null,2));
+    throw new Error(`Refusing clipped or moving map preview: ${JSON.stringify(bounds)}. ${String(error)}`);
+  }
+}
+
 async function main() {
   await requireRealStack();
   await mkdir(outputDir, {recursive:true});
@@ -128,7 +149,7 @@ async function main() {
   const mobileMarker=page.locator('.leaflet-interactive[data-house-id="target-hampton-cove-garage"]');
   await mobileMarker.focus(); await mobileMarker.press('Enter');
   await page.getByRole('dialog',{name:/Listing preview:/}).waitFor();
-  await page.waitForFunction(()=>!document.querySelector('#result-map')?.classList.contains('leaflet-pan-anim'));
+  await waitForMapPreview(page);
   await capture(page, `${outputDir}/mobile-map-preview.png`);
   await page.getByRole('button',{name:'Close listing preview'}).click();
   await page.getByRole('button', {name:'Show list',exact:true}).click();

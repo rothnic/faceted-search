@@ -410,3 +410,8 @@ h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
  #filter-panel-content .filter-heading { gap:8px; margin-bottom:12px; }
  #filter-panel-content .close-filter-panel { width:auto; margin:0; padding:0 10px; min-height:44px; height:44px; font-size:11px; white-space:nowrap; }
 }
+@media(max-width:400px) {
+ .result-actions { flex-wrap:wrap; justify-content:flex-start; gap:4px 6px; }
+ .result-actions .amenities { display:contents; }
+ .result-actions .button-link { margin-left:auto; min-height:44px; height:44px; }
+}

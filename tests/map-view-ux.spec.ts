@@ -1,4 +1,15 @@
-import {expect,test} from '@playwright/test';
+import {expect,test,type Page} from '@playwright/test';
+
+async function expectPreviewInsideMap(page: Page) {
+  await expect.poll(()=>page.evaluate(()=>{
+    const map=document.querySelector('#result-map')!,popup=document.querySelector('.map-listing-preview')!;
+    const m=map.getBoundingClientRect();
+    return !map.querySelector('.leaflet-pan-anim,.leaflet-zoom-anim') && [popup,...popup.querySelectorAll('button')].every(element=>{
+      const p=element.getBoundingClientRect();
+      return p.left>=m.left && p.right<=m.right && p.top>=m.top && p.bottom<=m.bottom;
+    });
+  })).toBe(true);
+}
 
 // Internal rendering fixture only. Acceptance captures load actual OSM tiles.
 const tile = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP1sAAAAASUVORK5CYII=','base64');
@@ -71,7 +82,7 @@ test('desktop map stays visible and stationary while its listing pane scrolls', 
   await expect(page.locator('#result-map')).toBeInViewport();
 });
 
-for (const width of [1366,390]) {
+for (const width of [1366,390,320]) {
   test(`map preview supports keyboard, dismissal and Details at ${width}px`, async ({page})=>{
     await page.route('https://tile.openstreetmap.org/**',route=>route.fulfill({contentType:'image/png',body:tile}));
     await page.setViewportSize({width,height:900});
@@ -87,6 +98,12 @@ for (const width of [1366,390]) {
     await marker.press('Enter');
     const preview=page.getByRole('dialog',{name:/Listing preview: Hampton Cove/});
     await expect(preview).toBeVisible();
+    await expectPreviewInsideMap(page);
+    if(width===390) {
+      await page.setViewportSize({width:320,height:900});
+      await expectPreviewInsideMap(page);
+      await expect(preview).toBeVisible();
+    }
     await expect(page.getByRole('button',{name:'Close listing preview'})).toBeFocused();
     await expect(marker).toHaveAttribute('aria-expanded','true');
     await page.keyboard.press('Escape');
@@ -105,8 +122,8 @@ for (const width of [1366,390]) {
   });
 }
 
-test.describe('touch marker preview',()=>{
-  test.use({hasTouch:true,isMobile:true,viewport:{width:390,height:844}});
+for (const width of [390,320]) test.describe(`touch marker preview at ${width}px`,()=>{
+  test.use({hasTouch:true,isMobile:true,viewport:{width,height:844}});
   test('tap opens persistent card without hover tooltip',async({page})=>{
     await page.route('https://tile.openstreetmap.org/**',route=>route.fulfill({contentType:'image/png',body:tile}));
     await page.goto('/search?mode=keyword&q=garage');
@@ -118,9 +135,9 @@ test.describe('touch marker preview',()=>{
     const preview=page.getByRole('dialog',{name:/Listing preview:/});
     await expect(preview).toBeVisible();
     await expect(page.locator('.map-hover-tooltip')).toBeHidden();
-    await expect(page.locator('#result-map')).not.toHaveClass(/leaflet-pan-anim/);
+    await expectPreviewInsideMap(page);
     const box=(await preview.boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x+box.width).toBeLessThanOrEqual(390);
+    expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x+box.width).toBeLessThanOrEqual(width);
     expect(box.y).toBeGreaterThanOrEqual(0); expect(box.y+box.height).toBeLessThanOrEqual(844);
     await preview.getByRole('button',{name:'Details',exact:true}).tap();
     await expect(page.getByRole('dialog',{name:title,exact:true})).toBeVisible();

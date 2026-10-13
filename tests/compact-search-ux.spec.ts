@@ -63,8 +63,23 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       const utilityStyles=await page.locator('#sort,#system-info-toggle').evaluateAll(es=>es.map(e=>({border:getComputedStyle(e).borderTopWidth,height:e.getBoundingClientRect().height})));
       for(const utility of utilityStyles) { expect(utility.border).toBe('0px'); expect(utility.height).toBeGreaterThanOrEqual(44); }
       const cardBox = (await page.locator('.result').first().boundingBox())!;
-      const amenityRow = (await page.locator('.result-actions').first().boundingBox())!;
-      expect(amenityRow.height).toBeLessThanOrEqual(100);
+      const footerTargets=await page.locator('.result').first().locator('.result-actions button').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().toJSON()));
+      for(const target of footerTargets) {
+        expect(target.height).toBeGreaterThanOrEqual(44);
+        expect(target.left).toBeGreaterThanOrEqual(cardBox.x);
+        expect(target.right).toBeLessThanOrEqual(cardBox.x+cardBox.width);
+        expect(target.top).toBeGreaterThanOrEqual(cardBox.y);
+        expect(target.bottom).toBeLessThanOrEqual(cardBox.y+cardBox.height);
+      }
+      for(let a=0;a<footerTargets.length;a++) for(let b=a+1;b<footerTargets.length;b++) {
+        const x=footerTargets[a],y=footerTargets[b];
+        expect(x.right<=y.left+.5 || y.right<=x.left+.5 || x.bottom<=y.top+.5 || y.bottom<=x.top+.5).toBe(true);
+      }
+      const rows=[...new Set(footerTargets.map(target=>Math.round(target.top)))].sort((a,b)=>a-b);
+      for(let row=1;row<rows.length;row++) {
+        const previousBottom=Math.max(...footerTargets.filter(target=>Math.round(target.top)===rows[row-1]).map(target=>target.bottom));
+        expect(rows[row]-previousBottom).toBeLessThanOrEqual(4.5);
+      }
       expect(Math.abs(cardBox.x-(viewport.width-cardBox.x-cardBox.width))).toBeLessThanOrEqual(2);
       await page.locator('#search-box').fill('gar');
       await expect(page.locator('#search-suggestions')).toBeVisible();
