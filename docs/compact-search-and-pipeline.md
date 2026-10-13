@@ -49,3 +49,25 @@ and execution details are saved in `native-execution-evidence.json`.
 Real-stack browser tests and final screenshot inspection are required separately
 from the 40-case internal mechanics/queue-contract regression suite. The latter
 uses explicit `demo:memory` startup and excludes `@real-services`.
+
+## Secondary-information refinement (9dcedfd)
+
+The next refinement moves System info into the title/control band and groups the
+visible result count, query chips, filters and save action. Provider/timing,
+ranking explanation and loaded-count telemetry are available through a labeled
+information disclosure. Execution warnings remain visible. Saved-search names
+use two lines, with the complete name available on hover and to assistive tools.
+
+The 40-case local browser run passes on this revision. With both explicit fixture
+warnings still visible, first-card positions are 320.25px at 1366 × 900 and
+508.5px at 390 × 844, with two/one complete cards visible. A separately inspected
+actual-PostgreSQL cloud-browser screenshot at 1180 × 757 starts its first card at
+219px; that different viewport is not used as a same-size comparison.
+
+The completed real-service CI run 38464194492 used the preceding 0184b6e UI:
+its PostgreSQL `garage` query starts at 322.5px desktop and 447px mobile at the
+matching 1366 × 900 / 390 × 844 viewports, with two/one complete cards, no warnings
+and no horizontal overflow. All 14 images passed independent pixel review.
+Those images retain the earlier secondary-information rows and must not be
+presented as screenshots of the newer collapsed-info UI. The matching newer
+mobile/full-matrix capture remains pending publication and CI.
