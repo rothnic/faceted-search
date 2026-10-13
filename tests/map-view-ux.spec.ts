@@ -70,3 +70,83 @@ test('desktop map stays visible and stationary while its listing pane scrolls', 
   await expect.poll(async()=> (await map.boundingBox())!.y).toBeCloseTo(before!.y,0);
   await expect(page.locator('#result-map')).toBeInViewport();
 });
+
+for (const width of [1366,390]) {
+  test(`map preview supports keyboard, dismissal and Details at ${width}px`, async ({page})=>{
+    await page.route('https://tile.openstreetmap.org/**',route=>route.fulfill({contentType:'image/png',body:tile}));
+    await page.setViewportSize({width,height:900});
+    await page.goto('/search?mode=keyword&q=garage');
+    await expect(page.locator('.result').first()).toBeVisible();
+    if(width<760) await page.getByRole('button',{name:'Show map',exact:true}).click();
+    const marker=page.locator('.leaflet-interactive[data-house-id="target-hampton-cove-garage"]');
+    await expect(page.getByRole('button',{name:'$525,000 · Hampton Cove garage home with mountain views',exact:true})).toBeVisible();
+    await marker.focus();
+    await expect(page.locator('.map-hover-tooltip .tooltip-content')).toContainText('$525,000');
+    await marker.press('Escape');
+    await expect(page.locator('.map-hover-tooltip')).toBeHidden();
+    await marker.press('Enter');
+    const preview=page.getByRole('dialog',{name:/Listing preview: Hampton Cove/});
+    await expect(preview).toBeVisible();
+    await expect(page.getByRole('button',{name:'Close listing preview'})).toBeFocused();
+    await expect(marker).toHaveAttribute('aria-expanded','true');
+    await page.keyboard.press('Escape');
+    await expect(preview).toBeHidden();
+    await expect(marker).toBeFocused();
+    await marker.press('Space');
+    await expect(preview).toBeVisible();
+    await page.locator('#search-box').click();
+    await expect(preview).toBeHidden();
+    await marker.focus(); await marker.press('Enter');
+    await page.getByRole('button',{name:'Close listing preview'}).click();
+    await expect(preview).toBeHidden();
+    await marker.focus(); await marker.press('Enter');
+    await preview.getByRole('button',{name:'Details',exact:true}).click();
+    await expect(page.getByRole('dialog',{name:'Hampton Cove garage home with mountain views',exact:true})).toBeVisible();
+  });
+}
+
+test.describe('touch marker preview',()=>{
+  test.use({hasTouch:true,isMobile:true,viewport:{width:390,height:844}});
+  test('tap opens persistent card without hover tooltip',async({page})=>{
+    await page.route('https://tile.openstreetmap.org/**',route=>route.fulfill({contentType:'image/png',body:tile}));
+    await page.goto('/search?mode=keyword&q=garage');
+    await expect(page.locator('.result').first()).toBeVisible();
+    await page.getByRole('button',{name:'Show map',exact:true}).tap();
+    const marker=page.locator('.leaflet-interactive').last();
+    const title=(await marker.getAttribute('aria-label'))!.split(' · ').slice(1).join(' · ');
+    await marker.tap();
+    const preview=page.getByRole('dialog',{name:/Listing preview:/});
+    await expect(preview).toBeVisible();
+    await expect(page.locator('.map-hover-tooltip')).toBeHidden();
+    await expect(page.locator('#result-map')).not.toHaveClass(/leaflet-pan-anim/);
+    const box=(await preview.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x+box.width).toBeLessThanOrEqual(390);
+    expect(box.y).toBeGreaterThanOrEqual(0); expect(box.y+box.height).toBeLessThanOrEqual(844);
+    await preview.getByRole('button',{name:'Details',exact:true}).tap();
+    await expect(page.getByRole('dialog',{name:title,exact:true})).toBeVisible();
+  });
+});
+
+test('map-only detail failure is explicit and closing ignores a late response',async({page})=>{
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/api/houses/*',async route=>{
+    await gate;
+    await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Listing lookup unavailable'})});
+  });
+  await page.goto('/search?mode=keyword&q=garage');
+  await expect(page.locator('.result').first()).toBeVisible();
+  const marker=page.locator('.leaflet-interactive').last();
+  await marker.focus(); await marker.press('Enter');
+  await page.getByRole('dialog',{name:/Listing preview:/}).getByRole('button',{name:'Details',exact:true}).click();
+  const loading=page.getByRole('dialog',{name:'Listing details',exact:true});
+  await expect(loading).toContainText('Loading listing');
+  await loading.getByRole('button',{name:'Close',exact:true}).click();
+  const response=page.waitForResponse(r=>r.url().includes('/api/houses/'));
+  release(); await response;
+  await expect(loading).toBeHidden();
+  await marker.focus(); await marker.press('Enter');
+  await page.getByRole('dialog',{name:/Listing preview:/}).getByRole('button',{name:'Details',exact:true}).click();
+  await expect(loading.getByRole('alert')).toHaveText('Listing lookup unavailable');
+  await expect(loading.getByRole('button',{name:'Retry details',exact:true})).toBeVisible();
+});

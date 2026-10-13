@@ -1,5 +1,6 @@
 import {
   app,
+  api,
   currency,
   escapeHtml,
   label,
@@ -9,15 +10,38 @@ import {
   titleLabel
 } from '../core.js';
 
-export function openHitDetails(id) {
+let detailRequestId = 0;
+export async function openHitDetails(id) {
+  const requestId = ++detailRequestId;
   state.selectedHitId = id;
+  state.selectedHitRecord = null;
+  state.detailError = null;
+  state.detailLoading = !selectedHit();
   syncHitDialog();
   document.querySelector('.detail-dialog')?.focus?.();
+  if (!state.detailLoading) return;
+  try {
+    const result = await api(`/api/houses/${encodeURIComponent(id)}`);
+    if (requestId !== detailRequestId || state.selectedHitId !== id) return;
+    state.selectedHitRecord = result.house;
+  } catch (error) {
+    if (requestId !== detailRequestId || state.selectedHitId !== id) return;
+    state.detailError = error.message;
+  } finally {
+    if (requestId === detailRequestId && state.selectedHitId === id) {
+      state.detailLoading = false;
+      syncHitDialog();
+      document.querySelector('.detail-dialog')?.focus?.();
+    }
+  }
 }
 
 export function closeHitDetails() {
   if (!state.selectedHitId) return;
+  ++detailRequestId;
   state.selectedHitId = null;
+  state.detailLoading = false;
+  state.detailError = null;
   syncHitDialog();
 }
 
@@ -38,6 +62,12 @@ function detailItem(labelText, value) {
 }
 
 function renderHitDialog() {
+  if (state.selectedHitId && (state.detailLoading || state.detailError)) return `
+    <div class="modal-backdrop" data-close-dialog="true"><section class="detail-dialog" role="dialog" aria-modal="true" aria-label="Listing details" tabindex="-1">
+      <button class="btn btn-ghost" type="button" data-close-dialog="true">Close</button><h2>Listing details</h2>
+      <p role="${state.detailError ? 'alert' : 'status'}">${state.detailError ? escapeHtml(state.detailError) : 'Loading listing…'}</p>
+      ${state.detailError ? `<button class="btn btn-primary" data-open-hit="${escapeHtml(state.selectedHitId)}">Retry details</button>` : ''}
+    </section></div>`;
   const hit = selectedHit();
   if (!hit) return '';
   const coreItems = [
@@ -58,7 +88,7 @@ function renderHitDialog() {
     ['Distance', hit.distanceMiles !== undefined ? `${hit.distanceMiles.toFixed(1)} mi away` : undefined]
   ];
   const searchItems = [
-    ['Matched terms', hit.matchedTerms?.length ? hit.matchedTerms.join(', ') : 'None'],
+    ['Matched terms', Array.isArray(hit.matchedTerms) ? (hit.matchedTerms.length ? hit.matchedTerms.join(', ') : 'None') : 'Not provided by record lookup'],
     ['Created', new Date(hit.createdAt).toLocaleDateString()],
     ['Updated', new Date(hit.updatedAt).toLocaleDateString()]
   ];

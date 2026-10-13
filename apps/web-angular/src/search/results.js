@@ -21,9 +21,8 @@ function renderRefinements() {
   if (state.request.geo) parts.push({ label: `radius: ${state.request.geo.radiusMiles} miles`, action: 'geo' });
   if (state.request.viewport) parts.push({ label: 'inside map viewport', action: 'viewport' });
   return `<div class="refinements">${parts.map((part) => `
-    <button type="button" class="badge badge-outline badge-primary refinement-pill" aria-label="Remove ${escapeHtml(part.label)}" data-remove-refinement="${part.action}" ${part.key ? `data-key="${part.key}"` : ''} ${part.value !== undefined ? `data-value="${escapeHtml(part.value)}"` : ''}>
-      <span>${escapeHtml(part.label)}</span>
-      <span aria-hidden="true">×</span>
+    <button type="button" class="btn btn-ghost refinement-pill" aria-label="Remove ${escapeHtml(part.label)}" data-remove-refinement="${part.action}" ${part.key ? `data-key="${part.key}"` : ''} ${part.value !== undefined ? `data-value="${escapeHtml(part.value)}"` : ''}>
+      <span class="badge badge-soft badge-primary"><span>${escapeHtml(part.label)}</span><span aria-hidden="true">×</span></span>
     </button>
   `).join('') || '<span class="stats">No refinements selected</span>'}</div>`;
 }
@@ -36,7 +35,7 @@ export function renderResultCard(hit) {
       <p class="result-location">${escapeHtml(hit.city)}${hit.neighborhood ? ` · ${escapeHtml(hit.neighborhood)}` : ''}</p>
       <div class="meta property-facts"><span>${hit.bedrooms} bd</span><span>${hit.bathrooms} ba</span><span>${hit.squareFeet.toLocaleString()} sqft</span>${hit.distanceMiles !== undefined ? `<span>${hit.distanceMiles.toFixed(1)} mi away</span>` : ''}</div>
       <p class="result-description">${escapeHtml(hit.description)}</p>
-      <div class="result-actions"><div class="amenities">${hit.amenities.map((item) => `<button type="button" class="badge badge-ghost badge-sm hit-chip" aria-label="Filter by ${escapeHtml(label(item))}" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div><button type="button" class="btn btn-sm btn-ghost button-link" data-open-hit="${hit.id}">Details ↗</button></div>
+      <div class="result-actions"><div class="amenities">${hit.amenities.map((item) => `<button type="button" class="btn btn-ghost btn-sm hit-chip" aria-label="Filter by ${escapeHtml(label(item))}" data-hit-filter="amenities" data-value="${escapeHtml(item)}"><span class="badge badge-ghost badge-sm">${label(item)}</span></button>`).join('')}</div><button type="button" class="btn btn-sm btn-ghost button-link" data-open-hit="${hit.id}">Details ↗</button></div>
     </article>
   `;
 }

@@ -84,6 +84,13 @@ try {
       assert.equal(response.status, 200, JSON.stringify(response.body));
       return response.body as HouseSearchResponse;
     };
+    const detail = await call('/api/houses/target-retiree-low-maintenance');
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.house.id, 'target-retiree-low-maintenance');
+    assert.equal(typeof detail.body.house.city, 'string');
+    assert(!('score' in detail.body.house));
+    assert.equal((await call('/api/houses/missing-house')).status, 404);
+    assert.equal((await call('/api/houses/%E0%A4%A')).status, 400);
     const schema = (await call('/api/schema')).body;
     assert.equal(schema.liveIntrospection, false);
     for (const tableName of ['house_amenities', 'house_tags']) {
@@ -148,6 +155,7 @@ try {
     assert.equal((await call('/api/embeddings')).body.computedTexts, beforePrice + 1);
     await call(`/api/houses/${edited.hits[0].id}`, { deleted: true }, 'PATCH');
     assert(!(await search({})).mapHits.some((hit) => hit.id === edited.hits[0].id));
+    assert.equal((await call(`/api/houses/${edited.hits[0].id}`)).status, 404);
     assert.equal((await call('/api/search', { q: 'x'.repeat(2001) })).status, 400);
 
     console.log(JSON.stringify({ model: EMBEDDING_MODEL, modelLoadAndTwoTextsMs: Math.round(modelLoadAndTwoTextsMs), firstSearchMs: cold.processingTimeMs, repeatSearchMs: warm.processingTimeMs, semanticHits: cold.totalHits, target: cold.hits[0].id, similarity: cold.hits[0].semanticScore, processRssMiB: Math.round(process.memoryUsage().rss / 1024 / 1024) }, null, 2));

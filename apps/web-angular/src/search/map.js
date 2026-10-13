@@ -15,7 +15,7 @@ export function renderResultMap() {
   return `
     <section class="result-map" aria-label="Map of visible results">
       <details class="map-key"><summary>Map key</summary><div class="map-legend" aria-label="Map marker legend">${legendTypes.map((type) => { const style = propertyTypeStyle(type); return `<span><i style="background:${style.color}"></i>${escapeHtml(style.label)}</span>`; }).join('')}</div></details>
-      <div id="result-map" data-map-state="loading" class="leaflet-result-map" role="img" aria-label="Interactive map of matching search results"></div>
+      <div id="result-map" data-map-state="loading" class="leaflet-result-map" role="region" aria-label="Interactive map of matching search results"></div>
       <p class="map-feedback" role="status" data-state="loading">Loading map tiles…</p>
     </section>
   `;
@@ -68,26 +68,75 @@ export function renderLeafletMap() {
   tiles.on('tileload load', () => updateReadiness());
   tiles.addTo(map);
 
+  let activeMarker;
+  const dismissOutside = (event) => {
+    if (activeMarker && !activeMarker.getPopup()?.getElement()?.contains(event.target) && event.target !== activeMarker.getElement()) map.closePopup();
+  };
+  document.addEventListener('pointerdown', dismissOutside);
+  map.on('unload', () => document.removeEventListener('pointerdown', dismissOutside));
+  mapElement.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      const marker = activeMarker;
+      map.closePopup(); marker?.getElement()?.focus();
+      map.eachLayer((layer) => layer.closeTooltip?.());
+      event.preventDefault(); event.stopPropagation();
+    }
+  });
   const bounds = [];
   for (const hit of state.response.mapHits) {
     const point = [hit.lat, hit.lng];
     const style = propertyTypeStyle(hit.propertyType);
     bounds.push(point);
-    L.circleMarker(point, {
+    const marker = L.circleMarker(point, {
       radius: 4.75,
       color: '#ffffff',
       weight: 1.5,
       fillColor: style.color,
       fillOpacity: 0.88
     })
-      .on('popupopen', (event) => event.target.setStyle({radius:7,weight:3,color:'#ffffff',fillOpacity:1}))
-      .on('popupclose', (event) => event.target.setStyle({radius:4.75,weight:1.5,color:'#ffffff',fillOpacity:.88}))
-      .bindPopup(`
-        <strong>${escapeHtml(hit.title)}</strong><br />
-        ${currency(hit.price)} · ${escapeHtml(style.label)}<br />
-        ${escapeHtml(hit.city)}${hit.neighborhood ? `, ${escapeHtml(hit.neighborhood)}` : ''}
-      `)
-      .addTo(map);
+      .bindTooltip(`<div class="tooltip-content"><strong>${currency(hit.price)}</strong><br>${escapeHtml(hit.title)}</div>`, {
+        direction:'auto', offset:[8,0], opacity:1, className:'tooltip tooltip-open tooltip-primary map-hover-tooltip'
+      })
+      .bindPopup(`<article class="card map-listing-preview" role="dialog" aria-label="Listing preview: ${escapeHtml(hit.title)}">
+        <div class="card-body"><button type="button" class="btn btn-ghost preview-close" aria-label="Close listing preview">×</button>
+        <strong class="preview-price">${currency(hit.price)}</strong><h3>${escapeHtml(hit.title)}</h3>
+        <p>${escapeHtml(hit.city)} · ${escapeHtml(style.label)}</p>
+        <button type="button" class="btn btn-primary btn-sm" data-open-hit="${escapeHtml(hit.id)}">Details</button></div>
+      </article>`, {closeButton:false, maxWidth:280, minWidth:220, autoPanPadding:[16,16]})
+      .on('popupopen', () => {
+        activeMarker = marker;
+        marker.closeTooltip();
+        marker.setStyle({radius:7,weight:3,fillOpacity:1});
+        marker.getElement()?.setAttribute('aria-expanded','true');
+        marker.getPopup().getElement().querySelector('.preview-close').addEventListener('click', () => {
+          map.closePopup(); marker.getElement()?.focus();
+        }, {once:true});
+      })
+      .on('popupclose', () => {
+        if (activeMarker === marker) activeMarker = null;
+        marker.setStyle({radius:4.75,weight:1.5,fillOpacity:.88});
+        marker.getElement()?.setAttribute('aria-expanded','false');
+      });
+    marker.on('add', () => {
+    const element = marker.getElement();
+    element.ownerSVGElement?.setAttribute('role','group');
+    element.ownerSVGElement?.setAttribute('aria-label','Matching property markers');
+    element.setAttribute('tabindex','0');
+    element.setAttribute('role','button');
+    element.setAttribute('aria-label',`${currency(hit.price)} · ${hit.title}`);
+    element.setAttribute('aria-haspopup','dialog');
+    element.setAttribute('aria-expanded','false');
+    element.dataset.houseId = hit.id;
+    element.addEventListener('focus', () => { if (!marker.isPopupOpen()) marker.openTooltip(); });
+    element.addEventListener('blur', () => marker.closeTooltip());
+    element.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault(); event.stopPropagation();
+      marker.openPopup();
+      marker.getPopup().getElement().querySelector('.preview-close').focus();
+    });
+    });
+    marker.addTo(map);
   }
 
   if (bounds.length === 1) map.setView(bounds[0], 13);

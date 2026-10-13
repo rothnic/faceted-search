@@ -104,6 +104,17 @@ try {
   console.log('Actual PostgreSQL extensions', versions.rows);
   const lexical = await search('postgres_native', { mode: 'keyword' });
   assert.equal(lexical.totalHits, 0);
+  const mapPage = await search('postgres_native', { q: 'garage', mode: 'keyword', pageSize: 1 });
+  const mapOnly = mapPage.mapHits.find((hit: {id: string}) => hit.id !== mapPage.hits[0].id);
+  assert(mapOnly, 'Detail regression needs a map result outside the loaded page');
+  const detail = (await call(`/api/houses/${encodeURIComponent(mapOnly.id)}`)).house;
+  assert.equal(detail.id, mapOnly.id);
+  assert.equal(detail.title, mapOnly.title);
+  assert.equal(detail.city, mapOnly.city);
+  assert(Array.isArray(detail.amenities) && Array.isArray(detail.tags) && typeof detail.description === 'string');
+  assert(!('score' in detail) && !('matchedTerms' in detail), 'Record details must not invent query-ranking metadata');
+  assert.equal((await fetch(`${base}/api/houses/missing-house`)).status, 404);
+  assert.equal((await fetch(`${base}/api/houses/%E0%A4%A`)).status, 400);
   const nativeResults: Record<string, unknown> = {};
   for (const provider of ['postgres_native', ...(process.env.TEST_PG_SEARCH === '1' ? ['pg_search'] : []), ...providers]) {
     const keyword = await search(provider, { q: 'garage', mode: 'keyword' });
@@ -163,6 +174,7 @@ try {
   const computed = (await call('/api/embeddings')).computedTexts;
   await call(`/api/houses/${id}`, { price: 275000 }, 'PATCH');
   await idle();
+  assert.equal((await call(`/api/houses/${id}`)).house.price, 275000, 'Details read current PostgreSQL values');
   const priceOnly = await vectors(id);
   assert.equal((await call('/api/embeddings')).computedTexts, computed, 'Price-only update should reuse PG vector');
   for (const provider of Object.keys(before)) assert(cosine(before[provider], priceOnly[provider]) > 0.99999, `${provider} price-only vector`);
@@ -190,6 +202,7 @@ try {
   await pool.query("UPDATE cities SET name=name || ' Test' WHERE id=$1", [cityId]);
   await idle();
   assert((await search('postgres_native', { q: '', filters: {} })).hits.some((hit: { city: string }) => hit.city.endsWith(' Test')));
+  assert((await call(`/api/houses/${id}`)).house.city.endsWith(' Test'), 'Details read current joined city names');
   await stop();
   await pool.query("UPDATE houses SET description=description || ' Restart recovery' WHERE id=$1", [id]);
   await start(); await idle();
@@ -198,6 +211,7 @@ try {
   await call(`/api/houses/${id}`, { deleted: true }, 'PATCH'); await idle();
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM house_embeddings WHERE house_id=$1', [id])).rows[0].count, 0);
   for (const provider of providers) assert.equal((await engine(provider, provider === 'meilisearch' ? `/indexes/houses/documents/${id}` : `/collections/houses/documents/${id}`)).status, 404);
+  assert.equal((await fetch(`${base}/api/houses/${id}`)).status, 404, 'Deleted records have no public detail');
   const final = await call('/api/embedding-jobs');
   assert.equal(final.documents.pending, 0);
   console.log(JSON.stringify({ providers, automaticSeedMs, nativeResults, finalDocuments: final.documents, assertions: 'real FTS/BM25/native keyword and vector queries, backend maps/facets/counts/scopes, generation, edits, fresh-equivalence, SQL triggers, restart and deletes passed' }, null, 2));

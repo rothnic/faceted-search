@@ -251,13 +251,19 @@ test('small muted text meets WCAG AA contrast against its rendered background', 
   await page.goto('/search?mode=keyword&q=garage');
   await expect(page.locator('.result-description').first()).toBeVisible();
   const ratios = await page.evaluate(() => {
-    const luminance = (color: string) => {
-      const channels = color.match(/[\d.]+/g)!.slice(0,3).map(Number).map((n) => n / 255).map((n) => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4);
-      return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+    const luminance = (channels: number[]) => {
+      const linear=channels.slice(0,3).map(n=>n/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);
+      return linear[0]*.2126+linear[1]*.7152+linear[2]*.0722;
     };
-    return [['.system-strip','body'], ['.count','#search-filters .panel'], ['.result-description','.result'], ['.hit-chip','.hit-chip']].map(([text,background]) => {
-      const fg = luminance(getComputedStyle(document.querySelector(text)!).color);
-      const bg = luminance(getComputedStyle(document.querySelector(background)!).backgroundColor);
+    return [['.system-strip','body'], ['.count','#search-filters .panel'], ['.result-description','.result'], ['.hit-chip > .badge','.hit-chip > .badge']].map(([text,background]) => {
+      const context=document.createElement('canvas').getContext('2d')!;
+      context.fillStyle='#fff'; context.fillRect(0,0,1,1);
+      const ancestors:Element[]=[];
+      for(let element:Element|null=document.querySelector(background);element;element=element.parentElement) ancestors.unshift(element);
+      for(const element of ancestors) { context.fillStyle=getComputedStyle(element).backgroundColor; context.fillRect(0,0,1,1); }
+      const bg=luminance([...context.getImageData(0,0,1,1).data]);
+      context.fillStyle=getComputedStyle(document.querySelector(text)!).color; context.fillRect(0,0,1,1);
+      const fg=luminance([...context.getImageData(0,0,1,1).data]);
       return {selector:text,ratio:(Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05)};
     });
   });

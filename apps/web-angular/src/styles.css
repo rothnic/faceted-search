@@ -3,7 +3,7 @@
 @import 'tailwindcss';
 @plugin 'daisyui' {
   themes: false;
-  include: button, input, select, checkbox, badge, card;
+  include: button, input, select, checkbox, badge, card, tooltip;
   logs: false;
 }
 @plugin 'daisyui/theme' {
@@ -317,3 +317,35 @@ h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
 :root { --map-single-family:#12715c; --map-townhouse:#458a79; --map-condo:#365f70; --map-multi-family:#24483b; --map-land:#727446; }
 .refinement-pill:focus-visible,.hit-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 @media(max-width:760px) { .refinement-pill { min-height:44px; }.hit-chip { min-height:32px; } }
+
+/* Leaflet owns map positioning; daisyUI supplies tooltip/card presentation. */
+.leaflet-tooltip.map-hover-tooltip { position:absolute; padding:0; border:0; background:transparent; box-shadow:none; white-space:normal; }
+.map-hover-tooltip.tooltip > .tooltip-content { position:static; transform:none; width:max-content; max-width:230px; opacity:1; text-align:left; padding:8px 10px; }
+.map-hover-tooltip::before,.map-hover-tooltip::after { display:none; }
+.map-listing-preview .card-body { position:relative; padding:14px; gap:8px; }
+.map-listing-preview h3 { padding-right:26px; margin:0; font-size:14px; font-weight:650; }
+.map-listing-preview p { margin:0; font-size:12px; color:var(--muted); }
+.map-listing-preview .preview-price { padding-right:28px; font-size:19px; }
+.map-listing-preview .preview-close { position:absolute; top:0; right:0; width:44px; height:44px; min-height:44px; padding:0; font-size:22px; }
+.map-listing-preview .btn-primary { min-height:44px; }
+.leaflet-popup-content-wrapper { padding:0; border-radius:var(--panel-radius); }
+.leaflet-popup-content { margin:0; }
+.leaflet-interactive:focus-visible { outline:none; stroke:var(--accent-dark); stroke-width:4px; }
+@media(hover:none) { .map-hover-tooltip { display:none; } }
+@media(max-width:400px) {
+ .result-actions .amenities { min-width:0; flex-wrap:wrap; gap:4px 6px; }
+ .result-actions .hit-chip,.result-actions .button-link { flex-shrink:0; }
+}
+
+/* Compact badge paint inside generous, borderless interactive hit areas. */
+.refinement-pill,.hit-chip { padding:0; border:0; background:transparent; box-shadow:none; gap:0; }
+.refinement-pill { min-height:32px; height:32px; }
+.refinement-pill > .badge { min-height:22px; height:22px; padding-block:0; gap:6px; font-size:11px; }
+.hit-chip { min-height:28px; height:28px; }
+.hit-chip > .badge { min-height:20px; height:20px; padding-block:0; }
+@media(max-width:760px) {
+ .mobile-search-actions .mobile-filter-toggle { flex:0 0 auto; width:auto; padding:0 14px; }
+ .refinement-pill,.hit-chip { min-height:44px; height:44px; }
+}
+
+.results-head { align-items:center; }

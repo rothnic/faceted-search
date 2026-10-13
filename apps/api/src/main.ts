@@ -716,6 +716,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   }
 
   const houseMatch = pathname.match(/^\/api\/houses\/([^/]+)$/);
+  if (req.method === 'GET' && houseMatch) {
+    let id: string;
+    try { id = decodeURIComponent(houseMatch[1]); }
+    catch { return send(res, 400, { error: 'Invalid house ID encoding' }); }
+    // Detail reads are independent of search pagination/ranking. Connected mode
+    // reads the current joined PostgreSQL record, never a fixture or cached page.
+    const house = realServices ? (await realServices.loadHouses(id))[0] : houses.find((entry) => entry.id === id);
+    if (!house || house.deletedAt) return send(res, 404, { error: 'House not found' });
+    return send(res, 200, { house: { ...house, city: cityFor(house).name, neighborhood: neighborhoodFor(house)?.name } });
+  }
+
   if (req.method === 'PATCH' && houseMatch) {
     const body = await readJson(req);
     validateHousePatch(body);

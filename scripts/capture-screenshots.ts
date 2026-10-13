@@ -116,6 +116,12 @@ async function main() {
   await page.getByRole('button', {name:'Show map',exact:true}).click();
   await waitForMapTiles(page);
   await capture(page, `${outputDir}/mobile-map.png`);
+  const mobileMarker=page.locator('.leaflet-interactive[data-house-id="target-hampton-cove-garage"]');
+  await mobileMarker.focus(); await mobileMarker.press('Enter');
+  await page.getByRole('dialog',{name:/Listing preview:/}).waitFor();
+  await page.waitForFunction(()=>!document.querySelector('#result-map')?.classList.contains('leaflet-pan-anim'));
+  await capture(page, `${outputDir}/mobile-map-preview.png`);
+  await page.getByRole('button',{name:'Close listing preview'}).click();
   await page.getByRole('button', {name:'Show list',exact:true}).click();
   if (page.url() !== mobileUrl) throw new Error('Map/List toggle changed the search criteria');
   await page.setViewportSize({ width: 1366, height: 900 });
@@ -124,6 +130,11 @@ async function main() {
   await waitForSearchReady(page);
   await page.locator('.facet-group[data-facet="saved-searches"] input').first().waitFor();
   await capture(page, `${outputDir}/search-results.png`);
+  const desktopMarker=page.locator('.leaflet-interactive[data-house-id="target-hampton-cove-garage"]');
+  await desktopMarker.focus();
+  await page.locator('.map-hover-tooltip .tooltip-content').waitFor();
+  await capture(page, `${outputDir}/map-marker-tooltip.png`);
+  await page.locator('#search-box').focus();
 
   await page.locator('.result[data-house-id="target-hampton-cove-garage"]').click();
   await page.getByRole('dialog', { name: /Hampton Cove garage home/i }).waitFor();

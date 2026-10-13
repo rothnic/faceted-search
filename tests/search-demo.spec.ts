@@ -110,7 +110,7 @@ test('top refinement chips can clear individual filters when their text is click
 
 test('result map renders and hit amenity chips apply filters', async ({ page }) => {
   await page.goto('/search?mode=keyword&q=hampton%20cove%20garage');
-  await expect(page.getByRole('img', { name: /Interactive map of matching search results/i })).toBeVisible();
+  await expect(page.getByRole('region', { name: /Interactive map of matching search results/i })).toBeVisible();
   await expect(page.locator('.leaflet-container')).toBeVisible();
   await expect(page.locator('.leaflet-interactive')).toHaveCount(47);
   await expect(page.locator('.map-legend')).toContainText('Single family');

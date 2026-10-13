@@ -7,6 +7,9 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
     await expect(page.locator('.result').first()).toBeVisible();
     await expect(page.locator('.results-panel > .results-head .result-tools #save-search')).toBeVisible();
     await expect(page.locator('.results-panel > .results-workspace')).toBeVisible();
+    const headline=(await page.locator('.results-head h2').boundingBox())!;
+    const actions=(await page.locator('.result-tools').boundingBox())!;
+    expect(Math.abs(headline.y+headline.height/2-actions.y-actions.height/2)).toBeLessThanOrEqual(1);
     await expect(page.getByRole('button',{name:'Save search',exact:true})).toBeVisible();
     const radii=await page.locator('#search-box,#save-search,.toolbar,.result').evaluateAll(es=>es.map(e=>parseFloat(getComputedStyle(e).borderTopLeftRadius)));
     expect(Math.max(...radii)).toBeLessThanOrEqual(8);
@@ -48,10 +51,15 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       expect(filterBox.y).toBeGreaterThanOrEqual(inputBox.y+inputBox.height);
       expect(Math.abs(filterBox.y-sortBox.y)).toBeLessThan(1);
       expect(filterBox.x).toBeGreaterThan(sortBox.x);
+      expect(filterBox.width).toBeLessThan(130);
+      const chipPaint=await page.locator('.refinement-pill > .badge,.hit-chip > .badge').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().height));
+      expect(Math.max(...chipPaint)).toBeLessThanOrEqual(24);
       await expect(page.locator('#result-info-toggle')).toHaveCount(0);
       const utilityStyles=await page.locator('#sort,#system-info-toggle').evaluateAll(es=>es.map(e=>({border:getComputedStyle(e).borderTopWidth,height:e.getBoundingClientRect().height})));
       for(const utility of utilityStyles) { expect(utility.border).toBe('0px'); expect(utility.height).toBeGreaterThanOrEqual(44); }
       const cardBox = (await page.locator('.result').first().boundingBox())!;
+      const amenityRow = (await page.locator('.result-actions').first().boundingBox())!;
+      expect(amenityRow.height).toBeLessThanOrEqual(100);
       expect(Math.abs(cardBox.x-(viewport.width-cardBox.x-cardBox.width))).toBeLessThanOrEqual(2);
       await page.locator('#search-box').fill('gar');
       await expect(page.locator('#search-suggestions')).toBeVisible();

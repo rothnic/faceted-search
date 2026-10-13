@@ -20,6 +20,9 @@ const state = {
   resultVirtualCleanup: null,
   isLoadingMore: false,
   selectedHitId: null,
+  selectedHitRecord: null,
+  detailLoading: false,
+  detailError: null,
   request: requestFromUrl(),
   sync: null,
   storageMode: null,
@@ -104,7 +107,8 @@ function propertyTypeStyle(type) {
 }
 
 function selectedHit() {
-  return (state.response?.hits || []).find((hit) => hit.id === state.selectedHitId);
+  return (state.response?.hits || []).find((hit) => hit.id === state.selectedHitId)
+    || (state.selectedHitRecord?.id === state.selectedHitId ? state.selectedHitRecord : null);
 }
 
 function escapeHtml(value) {
