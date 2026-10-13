@@ -14,6 +14,13 @@ async function requireRealStack() {
 
 const executionEvidence: unknown[] = [];
 async function capture(page: Page, path: string) {
+  if (await page.locator('#filter-panel-content').isVisible()) {
+    await page.waitForFunction(()=>{
+      const side=document.querySelector('#search-filters')!, panel=document.querySelector('#filter-panel-content')!;
+      const s=side.getBoundingClientRect(),p=panel.getBoundingClientRect();
+      return Math.abs(p.left-s.left)<.5 && p.right<=s.right+.5 && !panel.getAnimations({subtree:true}).some(animation=>animation.playState==='running');
+    },undefined,{timeout:10_000});
+  }
   if (await page.locator('#search-diagnostics').count()) {
     await page.waitForFunction(() => {
       const saved=document.querySelector('[data-facet="saved-searches"]');

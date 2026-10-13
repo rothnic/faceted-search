@@ -415,3 +415,7 @@ h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
  .result-actions .amenities { display:contents; }
  .result-actions .button-link { margin-left:auto; min-height:44px; height:44px; }
 }
+
+@media(min-width:761px) {
+ .search-drawer.drawer-open > .drawer-side > #filter-panel-content { transition:none; translate:0; }
+}

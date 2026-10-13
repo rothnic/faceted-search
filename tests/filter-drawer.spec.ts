@@ -41,9 +41,19 @@ for (const width of [320,390]) {
     await page.locator('#toggle-filters').click();
     await expect(min).toHaveValue('200000');
     const overlay=page.locator('.drawer-overlay');
-    const overlayBox=(await overlay.boundingBox())!;
-    console.log('DRAWER_OVERLAY',width,overlayBox);
-    await overlay.click({position:{x:overlayBox.width-8,y:180}});
+    // The root scrollbar gutter may settle after opening. Aim at the exposed
+    // backdrop strip, not at the viewport's disappearing outermost pixels.
+    await expect.poll(()=>overlay.evaluate(element=>{
+      const overlay=element.getBoundingClientRect(),panel=document.querySelector('#filter-panel-content')!.getBoundingClientRect();
+      if (Math.abs(panel.left-overlay.left)>.5 || document.querySelector('#filter-panel-content')!.getAnimations().some(animation=>animation.playState==='running')) return false;
+      const x=(panel.right+Math.min(overlay.right,document.documentElement.clientWidth))/2;
+      return document.elementFromPoint(x,180)===element;
+    })).toBe(true);
+    const point=await overlay.evaluate(element=>{
+      const overlay=element.getBoundingClientRect(),panel=document.querySelector('#filter-panel-content')!.getBoundingClientRect();
+      return {x:(panel.right+Math.min(overlay.right,document.documentElement.clientWidth))/2-overlay.left,y:180-overlay.top};
+    });
+    await overlay.click({position:point});
     await expect(page.locator('#search-filters')).toBeHidden();
     await expect(page.locator('#toggle-filters')).toBeFocused();
     await page.locator('#mobile-view-toggle').click();

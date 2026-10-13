@@ -113,6 +113,10 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       await expect(page.locator('#search-filters')).toBeHidden();
       await expect(page.locator('#toggle-filters')).toBeFocused();
     } else {
+      const sidebar=await page.locator('#search-filters').boundingBox();
+      const filterTitle=await page.locator('#filter-panel-title').boundingBox();
+      expect(filterTitle!.x).toBeGreaterThanOrEqual(sidebar!.x);
+      expect(filterTitle!.x+filterTitle!.width).toBeLessThanOrEqual(sidebar!.x+sidebar!.width);
       const controls = await page.evaluate(() => ['search-box','search-mode','provider','sort'].map(id => {
         const input = document.getElementById(id)!; const label = document.querySelector(`label[for="${id}"]`)!;
         return {labelY:label.getBoundingClientRect().y,inputY:input.getBoundingClientRect().y,height:input.getBoundingClientRect().height,background:getComputedStyle(input).backgroundColor,arrow:getComputedStyle(input).backgroundImage};
