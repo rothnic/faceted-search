@@ -1,3 +1,4 @@
+import { DATABASE_SCHEMA_SQL } from './schema.js';
 import pg from 'pg';
 import type { City, Neighborhood } from '../../../packages/domain/src/city.types.js';
 import type { House } from '../../../packages/domain/src/house.types.js';
@@ -60,105 +61,7 @@ export class RealServices {
   }
 
   async ensureSchema() {
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS cities (
-        id text PRIMARY KEY,
-        name text NOT NULL,
-        state text NOT NULL,
-        county text,
-        center_lat double precision NOT NULL,
-        center_lng double precision NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS neighborhoods (
-        id text PRIMARY KEY,
-        city_id text NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
-        name text NOT NULL,
-        center_lat double precision NOT NULL,
-        center_lng double precision NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS houses (
-        id text PRIMARY KEY,
-        title text NOT NULL,
-        description text NOT NULL,
-        city_id text NOT NULL REFERENCES cities(id),
-        neighborhood_id text REFERENCES neighborhoods(id),
-        address_line_1 text NOT NULL,
-        zip_code text NOT NULL,
-        lat double precision NOT NULL,
-        lng double precision NOT NULL,
-        price integer NOT NULL,
-        bedrooms integer NOT NULL,
-        bathrooms numeric NOT NULL,
-        square_feet integer NOT NULL,
-        lot_size_acres numeric,
-        year_built integer,
-        property_type text NOT NULL,
-        listing_status text NOT NULL,
-        school_district text,
-        created_at timestamptz NOT NULL,
-        updated_at timestamptz NOT NULL,
-        deleted_at timestamptz
-      );
-
-      CREATE TABLE IF NOT EXISTS house_amenities (
-        house_id text NOT NULL REFERENCES houses(id) ON DELETE CASCADE,
-        amenity text NOT NULL,
-        PRIMARY KEY (house_id, amenity)
-      );
-
-      CREATE TABLE IF NOT EXISTS house_tags (
-        house_id text NOT NULL REFERENCES houses(id) ON DELETE CASCADE,
-        tag text NOT NULL,
-        PRIMARY KEY (house_id, tag)
-      );
-
-      CREATE TABLE IF NOT EXISTS saved_searches (
-        id text PRIMARY KEY,
-        name text NOT NULL,
-        provider text NOT NULL,
-        criteria jsonb NOT NULL,
-        current_hit_count integer NOT NULL DEFAULT 0,
-        last_evaluated_at timestamptz,
-        new_matches_since_last_evaluation integer NOT NULL DEFAULT 0,
-        seen_house_ids text[] NOT NULL DEFAULT '{}',
-        created_at timestamptz NOT NULL,
-        updated_at timestamptz NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS search_sync_outbox (
-        id bigserial PRIMARY KEY,
-        provider text NOT NULL CHECK (provider IN ('meilisearch', 'typesense')),
-        house_id text NOT NULL,
-        action text NOT NULL CHECK (action IN ('upsert', 'delete')),
-        status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processed', 'failed')),
-        created_at timestamptz NOT NULL DEFAULT now(),
-        processed_at timestamptz,
-        error text
-      );
-
-      CREATE TABLE IF NOT EXISTS search_sync_state (
-        provider text PRIMARY KEY,
-        documents_indexed integer NOT NULL DEFAULT 0,
-        documents_deleted integer NOT NULL DEFAULT 0,
-        last_sync_time timestamptz,
-        last_sync_error text,
-        backfill_status text NOT NULL DEFAULT 'not_started'
-      );
-
-      INSERT INTO search_sync_state (provider)
-      VALUES ('meilisearch'), ('typesense')
-      ON CONFLICT (provider) DO NOTHING;
-
-      CREATE INDEX IF NOT EXISTS houses_city_id_idx ON houses(city_id);
-      CREATE INDEX IF NOT EXISTS houses_neighborhood_id_idx ON houses(neighborhood_id);
-      CREATE INDEX IF NOT EXISTS houses_listing_status_idx ON houses(listing_status);
-      CREATE INDEX IF NOT EXISTS houses_price_idx ON houses(price);
-      CREATE INDEX IF NOT EXISTS houses_updated_at_idx ON houses(updated_at);
-      CREATE INDEX IF NOT EXISTS house_amenities_amenity_idx ON house_amenities(amenity);
-      CREATE INDEX IF NOT EXISTS search_sync_outbox_pending_idx ON search_sync_outbox(status, provider);
-    `);
+    await this.pool.query(DATABASE_SCHEMA_SQL);
   }
 
   async seed(cities: City[], neighborhoods: Neighborhood[], houses: House[], savedSearches: SavedHouseSearch[]) {

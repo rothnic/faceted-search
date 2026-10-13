@@ -9,6 +9,8 @@ on:
 jobs:
   screenshots:
     runs-on: ubuntu-latest
+    env:
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     steps:
       - uses: actions/checkout@v4
 
@@ -18,6 +20,9 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm run typecheck
+      # Exercise real inference and warm the pinned model cache before browser capture.
+      - run: npm run verify:embeddings
       - run: npx playwright install --with-deps chromium
       - run: npm run screenshots:update
       - uses: actions/upload-artifact@v4

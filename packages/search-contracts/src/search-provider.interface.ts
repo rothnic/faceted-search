@@ -67,6 +67,7 @@ export type HouseSearchHit = House & {
   neighborhood?: string;
   distanceMiles?: number;
   score: number;
+  semanticScore?: number;
   semanticText: string;
   matchedTerms: string[];
 };
@@ -84,6 +85,8 @@ export type HouseSearchResponse = {
   facets: Record<string, FacetBucket[]>;
   processingTimeMs: number;
   debug?: {
+    execution?: 'local-cpu' | 'local-keyword' | 'external-keyword';
+    embedding?: { model: string; revision: string; dimensions: number; dtype: string; device: string; minimumSimilarity: number };
     rawRequest?: unknown;
     rawResponse?: unknown;
     sql?: string;

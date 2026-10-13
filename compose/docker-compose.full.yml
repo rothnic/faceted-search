@@ -37,10 +37,11 @@ services:
       - typesense-data:/data
 
   app:
-    image: artifactory.dev.nou-systems.com/nsi-containers-docker/library/node:22-alpine
+    image: artifactory.dev.nou-systems.com/nsi-containers-docker/library/node:22-bookworm-slim
     working_dir: /workspace
-    command: ["npm", "run", "api:dev"]
+    command: ["sh", "-c", "npm ci && npm run api:dev"]
     environment:
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
       PORT: "5173"
       HOST: 0.0.0.0
       DATABASE_URL: postgresql://demo:demo@postgres:5432/search_demo
@@ -52,6 +53,7 @@ services:
       - "5173:5173"
     volumes:
       - ..:/workspace
+      - app-node-modules:/workspace/node_modules
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,3 +64,4 @@ services:
 
 volumes:
   typesense-data:
+  app-node-modules:

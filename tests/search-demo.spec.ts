@@ -25,7 +25,7 @@ test('debounced search updates results and filters without replacing the focused
 });
 
 test('search suggestions appear while typing and can apply a query', async ({ page }) => {
-  await page.goto('/search?q=hampton%20cove%20garage');
+  await page.goto('/search?mode=keyword&q=hampton%20cove%20garage');
   await expect(page.locator('.leaflet-container')).toBeVisible();
 
   const searchBox = page.getByRole('textbox', { name: 'Search' });
@@ -106,7 +106,7 @@ test('top refinement chips can clear individual filters when their text is click
 });
 
 test('result map renders and hit amenity chips apply filters', async ({ page }) => {
-  await page.goto('/search?q=hampton%20cove%20garage');
+  await page.goto('/search?mode=keyword&q=hampton%20cove%20garage');
   await expect(page.getByRole('img', { name: /Interactive map of matching search results/i })).toBeVisible();
   await expect(page.locator('.leaflet-container')).toBeVisible();
   await expect(page.locator('.leaflet-interactive')).toHaveCount(47);
@@ -128,7 +128,7 @@ test('result map renders and hit amenity chips apply filters', async ({ page }) 
 });
 
 test('virtualized results append pages with infinite scroll', async ({ page }) => {
-  await page.goto('/search?q=hampton%20cove%20garage');
+  await page.goto('/search?mode=keyword&q=hampton%20cove%20garage');
   const scroller = page.locator('#result-list-scroll');
   await expect(scroller).toHaveAttribute('data-loaded-count', '18');
 
@@ -147,7 +147,7 @@ test('virtualized results append pages with infinite scroll', async ({ page }) =
 });
 
 test('clicking a hit opens a structured details overlay', async ({ page }) => {
-  await page.goto('/search?q=hampton%20cove%20garage');
+  await page.goto('/search?mode=keyword&q=hampton%20cove%20garage');
 
   await page.locator('.result[data-house-id="target-hampton-cove-garage"]').click();
   const dialog = page.getByRole('dialog', { name: /Hampton Cove garage home/i });

@@ -70,7 +70,7 @@ async function main() {
 
   await page.request.post('/api/seed');
 
-  await goto(page, '/search?q=hampton%20cove%20garage');
+  await goto(page, '/search?mode=keyword&q=hampton%20cove%20garage');
   await waitForSearchReady(page, { loaded: 18, total: 47 });
   await capture(page, 'docs/screenshots/search-results.png');
 
@@ -90,7 +90,7 @@ async function main() {
   const saved = page.locator('.facet-group[data-facet="saved-searches"] .facet-option').filter({ hasText: 'Waterfront home near Huntsville' });
   await saved.locator('input').check();
   await page.getByRole('button', { name: /saved: Waterfront home near Huntsville/i }).waitFor();
-  await waitForSearchReady(page, { loaded: 18, total: 23 });
+  await waitForSearchReady(page);
   await capture(page, 'docs/screenshots/saved-search-scope.png');
 
   await goto(page, '/providers');

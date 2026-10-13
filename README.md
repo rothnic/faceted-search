@@ -8,12 +8,12 @@ The app is intentionally small enough to inspect end to end: a Node API/static s
 
 | Option | Backend shape | Implemented behavior |
 | --- | --- | --- |
-| Native PostgreSQL | Source-of-truth database with simulated PostGIS and pgvector-style ranking | Keyword, semantic, and hybrid scoring; manual facets; range filters; geo radius; distance sorting; saved-search evaluation |
+| Native PostgreSQL | Source-of-truth database with local geo filtering and real CPU embeddings | Keyword, semantic, and hybrid scoring; manual facets; range filters; geo radius; distance sorting; saved-search evaluation |
 | PostgreSQL with `pg_search` | Postgres-hosted search extension strategy | Same frontend contract as native Postgres, with debug output showing the `pg_search`/BM25 request shape |
 | PostgreSQL plus Meilisearch | External search index synchronized from Postgres | Facets, range filters, geo filtering/sorting, hybrid search shape, direct InstantSearch demo, backfill, and sync-worker controls |
 | PostgreSQL plus Typesense | External search collection synchronized from Postgres | Faceted collection schema, geopoint and vector-query shape, direct InstantSearch demo, backfill, and sync-worker controls |
 
-Provider debug output shows the SQL or search-engine request shape each mode would use in a production-backed stack. If Meilisearch or Typesense is unavailable, provider searches fall back to the local Postgres-backed scorer and include an explicit warning in the debug panel.
+Semantic and hybrid queries use a real, pinned MiniLM model on the Node CPU for every provider selection. Keyword queries can use real Meilisearch/Typesense; unavailable external engines fall back to the local scorer with an explicit warning. SQL examples remain illustrative, and no external vector index is configured. See [CPU embeddings](docs/cpu-embeddings.md) for the model, offline setup, resource limits and measured latency.
 
 ## Features
 
@@ -21,7 +21,7 @@ Provider debug output shows the SQL or search-engine request shape each mode wou
 
 - **Debounced updates** - Search text updates results, facets, and debug output without replacing the focused search box.
 - **Search suggestions** - Suggestions come from listing titles, saved-search names, cities, neighborhoods, amenities, and property types.
-- **Search modes** - Keyword, semantic, and hybrid modes share the same frontend contract across all provider strategies.
+- **Search modes** - Keyword, semantic, and hybrid modes share the same frontend contract. Semantic search uses quantized 384-dimensional MiniLM embeddings; hybrid combines lexical relevance and cosine similarity.
 - **Sort modes** - Results can be sorted by relevance, distance, price, or newest update.
 - **Virtualized infinite results** - The main result pane uses TanStack Virtual to render only visible cards while appending more API pages as the user scrolls.
 
@@ -73,11 +73,11 @@ Provider debug output shows the SQL or search-engine request shape each mode wou
 ## Run Locally
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Open <http://127.0.0.1:5173/search>.
+Open <http://127.0.0.1:5173/search>. The first semantic/hybrid search downloads a ~23 MB public model, then runs locally without API keys or inference charges. Weights are cached in `data/models`; blank/keyword searches do not need them.
 
 `npm run dev` builds the frontend with Vite and starts the API/static server. For API-only work after a frontend build already exists, use:
 
@@ -113,10 +113,13 @@ Those pages use Vite-bundled `instantsearch.js` with `typesense-instantsearch-ad
 
 ```bash
 npm run typecheck
+npm run verify:embeddings
 npm run screenshots:update
 npm test
 npm run verify:full-stack
 ```
+
+`npm run verify:embeddings` exercises actual CPU inference and API retrieval, offline loading, cache invalidation, semantic saved searches, and error recovery in disposable local processes. It does not require the external Docker stack.
 
 The Playwright suite covers live debounced search, search suggestions, virtualized infinite results, facet limiting, removable refinement chips, clickable result chips, saved-search scoping, provider switching, direct InstantSearch routes, and external sync controls.
 
