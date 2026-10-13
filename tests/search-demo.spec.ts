@@ -5,7 +5,7 @@ test.beforeEach(async ({ request }) => {
 });
 
 test('keyword search ranks the Hampton Cove garage listing highly', async ({ page }) => {
-  await page.goto('/search');
+  await page.goto('/search?mode=keyword');
   await page.getByRole('textbox', { name: 'Search' }).fill('hampton cove garage');
   await expect(page.getByRole('heading', { name: /Hampton Cove garage home/i })).toBeVisible();
   await expect(page.getByText(/hits from Native PostgreSQL/i)).toBeVisible();
@@ -14,7 +14,7 @@ test('keyword search ranks the Hampton Cove garage listing highly', async ({ pag
 });
 
 test('debounced search updates results and filters without replacing the focused search box', async ({ page }) => {
-  await page.goto('/search');
+  await page.goto('/search?mode=keyword');
   const searchBox = page.getByRole('textbox', { name: 'Search' });
   await searchBox.focus();
   await searchBox.pressSequentially('low maintenance condo');
@@ -48,7 +48,7 @@ test('search suggestions appear while typing and can apply a query', async ({ pa
 });
 
 test('provider switcher keeps the same UI while changing debug payloads', async ({ page }) => {
-  await page.goto('/search?q=quiet%20home%20near%20good%20schools');
+  await page.goto('/search?mode=keyword&q=quiet%20home%20near%20good%20schools');
   for (const [value, label] of [
     ['postgres_native', 'Native PostgreSQL'],
     ['pg_search', 'PostgreSQL + pg_search'],
@@ -59,11 +59,11 @@ test('provider switcher keeps the same UI while changing debug payloads', async 
     await expect(page.locator('.stats', { hasText: label })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Quiet cul-de-sac home/i })).toBeVisible();
   }
-  await expect(page.getByText(/collection/i)).toBeVisible();
+  await expect(page.locator('#search-debug').getByText(/collection/i)).toBeVisible();
 });
 
 test('facets, range filters, geo radius, and distance sort update results', async ({ page }) => {
-  await page.goto('/search?q=home');
+  await page.goto('/search?mode=keyword&q=home');
   await page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/).check();
   await page.locator('[data-range="minPrice"]').fill('250000');
   await page.locator('[data-range="minPrice"]').press('Enter');
@@ -79,11 +79,11 @@ test('top refinement chips can clear individual filters when their text is click
   const saved = await (await request.post('/api/saved-searches', {
     data: {
       name: 'Garage homes chip scope',
-      criteria: { q: 'garage', mode: 'hybrid', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
+      criteria: { q: 'garage', mode: 'keyword', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
     }
   })).json();
 
-  await page.goto('/search?q=home');
+  await page.goto('/search?mode=keyword&q=home');
   await page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/).check();
   await page.locator('.facet-group[data-facet="saved-searches"]').getByLabel(/Garage homes chip scope/).check();
 
@@ -162,7 +162,7 @@ test('clicking a hit opens a structured details overlay', async ({ page }) => {
 });
 
 test('facet groups are capped by default and can be expanded', async ({ page }) => {
-  await page.goto('/search');
+  await page.goto('/search?mode=keyword');
   const amenities = page.locator('.facet-group[data-facet="amenities"]');
 
   await expect(amenities.locator('[data-filter="amenities"]')).toHaveCount(6);
@@ -173,7 +173,7 @@ test('facet groups are capped by default and can be expanded', async ({ page }) 
 });
 
 test('zero-hit searches can be saved in place and applied from the filter rail', async ({ page }) => {
-  await page.goto('/search');
+  await page.goto('/search?mode=keyword');
   await page.getByRole('textbox', { name: 'Search' }).fill('zzzz qqqq xxxx');
   await expect(page.getByText(/No listings match this search/i)).toBeVisible();
   page.once('dialog', async (dialog) => {
@@ -193,13 +193,13 @@ test('multiple saved searches apply as an OR scope before live filters narrow re
   const hampton = await (await request.post('/api/saved-searches', {
     data: {
       name: 'Hampton Cove scope',
-      criteria: { q: 'hampton cove garage', mode: 'hybrid', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
+      criteria: { q: 'hampton cove garage', mode: 'keyword', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
     }
   })).json();
   const condo = await (await request.post('/api/saved-searches', {
     data: {
       name: 'Restaurant condo scope',
-      criteria: { q: 'low maintenance condo', mode: 'hybrid', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
+      criteria: { q: 'low maintenance condo', mode: 'keyword', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
     }
   })).json();
 
@@ -217,20 +217,20 @@ test('saved search counts are live and multiple applied saved searches OR to the
   const hampton = await (await request.post('/api/saved-searches', {
     data: {
       name: 'Hampton Cove garage scope',
-      criteria: { q: 'hampton cove garage', mode: 'hybrid', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
+      criteria: { q: 'hampton cove garage', mode: 'keyword', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
     }
   })).json();
   const condo = await (await request.post('/api/saved-searches', {
     data: {
       name: 'Low maintenance condo scope',
-      criteria: { q: 'low maintenance condo', mode: 'hybrid', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
+      criteria: { q: 'low maintenance condo', mode: 'keyword', filters: {}, sort: 'relevance', page: 1, pageSize: 12, includeFacets: true }
     }
   })).json();
   const union = await (await request.post('/api/search', {
     data: {
       provider: 'postgres_native',
       q: '',
-      mode: 'hybrid',
+      mode: 'keyword',
       filters: {},
       sort: 'relevance',
       page: 1,
@@ -240,9 +240,9 @@ test('saved search counts are live and multiple applied saved searches OR to the
     }
   })).json();
 
-  await page.goto('/search');
+  await page.goto('/search?mode=keyword');
   const savedScope = page.locator('.facet-group[data-facet="saved-searches"]');
-  await expect(savedScope.getByText('Saved Searches')).toBeVisible();
+  await expect(savedScope.getByText('Saved Searches', { exact: true })).toBeVisible();
   const hamptonOption = savedScope.locator('.facet-option', { has: page.getByLabel(/Hampton Cove garage scope/) });
   const condoOption = savedScope.locator('.facet-option', { has: page.getByLabel(/Low maintenance condo scope/) });
   await expect(hamptonOption.locator('.count')).toHaveText(String(hampton.currentHitCount));
@@ -262,7 +262,7 @@ test('saved search counts are live and multiple applied saved searches OR to the
 });
 
 test('saving manual filters adds and applies the new saved search without leaving the search page', async ({ page }) => {
-  await page.goto('/search');
+  await page.goto('/search?mode=keyword');
   await page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/).check();
   await page.locator('[data-range="maxPrice"]').fill('350000');
   await page.locator('[data-range="maxPrice"]').press('Enter');
@@ -291,7 +291,7 @@ test('applying a saved search from the filter panel scopes hits, facets, and its
       name: 'Madison under 350k panel scope',
       criteria: {
         q: '',
-        mode: 'hybrid',
+        mode: 'keyword',
         filters: { city: ['Madison'], maxPrice: 350000 },
         sort: 'relevance',
         page: 1,
@@ -301,7 +301,7 @@ test('applying a saved search from the filter panel scopes hits, facets, and its
     }
   })).json();
 
-  await page.goto('/search');
+  await page.goto('/search?mode=keyword');
   await page.locator('.facet-group[data-facet="saved-searches"]').getByLabel(/Madison under 350k panel scope/).check();
 
   await expect(page.getByText(/10 hits from Native PostgreSQL/i)).toBeVisible();
@@ -321,7 +321,7 @@ test('provider comparison page explains capabilities and sync requirements', asy
   await expect(page.getByText(/instant search direct adapter/i)).toBeVisible();
 });
 
-test('direct InstantSearch.js routes render real adapter widgets for Typesense and Meilisearch', async ({ page }) => {
+test('direct InstantSearch.js routes render real adapter widgets for Typesense and Meilisearch @real-services', async ({ page }) => {
   await page.goto('/search/instant/typesense');
   await expect(page.getByRole('heading', { name: 'Typesense InstantSearch Demo' })).toBeVisible();
   await expect(page.getByText(/typesense-instantsearch-adapter/i)).toBeVisible();
@@ -338,7 +338,7 @@ test('direct InstantSearch.js routes render real adapter widgets for Typesense a
 });
 
 test('external provider sync demo shows outbox, backfill, and worker processing', async ({ page, request }) => {
-  await page.goto('/search?provider=meilisearch&q=madison%20starter%20home');
+  await page.goto('/search?mode=keyword&provider=meilisearch&q=madison%20starter%20home');
   await expect(page.getByRole('heading', { name: /Madison starter home/i })).toBeVisible();
 
   await page.getByRole('button', { name: 'Backfill Meili' }).click();

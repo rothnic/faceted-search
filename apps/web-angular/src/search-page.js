@@ -6,12 +6,14 @@ import {
   filterValue,
   label,
   state,
+  setHtmlPreservingFocus,
   syncUrl
 } from './core.js';
 import { renderFilters, renderToolbar } from './search/filters.js';
 import { closeHitDetails, openHitDetails, syncHitDialog } from './search/hit-dialog.js';
 import { renderLeafletMap } from './search/map.js';
 import { renderDebug, renderResults } from './search/results.js';
+import { refreshStatus, renderSystemStrip } from './system-status.js';
 import { setupVirtualizedResults } from './search/virtual-results.js';
 
 let searchDelegatesWired = false;
@@ -178,17 +180,32 @@ function scheduleSearch() {
 }
 
 export async function runSearch() {
+  clearTimeout(searchTimer);
   const requestId = ++state.searchRequestId;
   state.isLoadingMore = false;
+  state.loadMoreError = null;
   state.selectedHitId = null;
+  state.isSearching = true;
+  state.searchError = null;
+  // Hide stale results rather than showing them as matches for the new criteria.
+  state.response = null;
   syncUrl();
-  const [response] = await Promise.all([
-    api('/api/search', { method: 'POST', body: JSON.stringify(requestBody()) }),
-    loadSync()
-  ]);
-  if (requestId !== state.searchRequestId) return;
-  state.response = response;
   renderSearchPage();
+  void refreshStatus();
+  try {
+    const response = await api('/api/search', { method: 'POST', body: JSON.stringify(requestBody()) });
+    if (requestId !== state.searchRequestId) return;
+    state.response = response;
+  } catch (error) {
+    if (requestId !== state.searchRequestId) return;
+    state.searchError = error.message;
+  } finally {
+    if (requestId === state.searchRequestId) {
+      state.isSearching = false;
+      renderSearchPage();
+      void refreshStatus();
+    }
+  }
 }
 
 export async function loadBootstrap() {
@@ -196,15 +213,27 @@ export async function loadBootstrap() {
   state.providers = bootstrap.providers;
   state.catalog = bootstrap.fixtureCatalog;
   state.geoPresets = bootstrap.geoPresets;
-}
-
-async function loadSync() {
-  state.sync = await api('/api/sync/status');
+  state.storageMode = bootstrap.storageMode;
 }
 
 export async function loadSavedSearches() {
-  const data = await api('/api/saved-searches');
-  state.savedSearches = data.savedSearches;
+  state.savedSearchesLoading = true;
+  state.savedSearchesError = null;
+  try {
+    const data = await api('/api/saved-searches');
+    state.savedSearches = data.savedSearches;
+  } catch (error) { state.savedSearchesError = error.message; }
+  finally {
+    state.savedSearchesLoading = false;
+    // Do not rebuild the results/map or interrupt an in-flight search.
+    const savedGroup = document.querySelector('[data-facet="saved-searches"]');
+    if (savedGroup) {
+      const template = document.createElement('template');
+      template.innerHTML = renderFilters();
+      setHtmlPreservingFocus(savedGroup, template.content.querySelector('[data-facet="saved-searches"]').innerHTML);
+      savedGroup.querySelectorAll('[data-saved-search]').forEach((input) => input.addEventListener('change', () => setSavedSearch(input.dataset.savedSearch, input.checked)));
+    }
+  }
 }
 
 function updateToolbarControls() {
@@ -216,6 +245,7 @@ function updateToolbarControls() {
   if (sortSelect) sortSelect.value = state.request.sort;
   document.querySelectorAll('[data-mode]').forEach((button) => {
     button.classList.toggle('active', button.dataset.mode === state.request.mode);
+    button.setAttribute('aria-pressed', String(button.dataset.mode === state.request.mode));
   });
 }
 
@@ -258,7 +288,12 @@ function wireSearchContent() {
 function wireSearchDelegates() {
   if (searchDelegatesWired) return;
   searchDelegatesWired = true;
+  window.addEventListener('system-status-updated', () => {
+    const debug = document.querySelector('#search-debug');
+    if (debug) setHtmlPreservingFocus(debug, renderDebug(requestBody));
+  });
   app.addEventListener('click', async (event) => {
+    try {
     if (!(event.target instanceof Element)) return;
     if (event.target.dataset.closeDialog && (event.target.classList.contains('modal-backdrop') || event.target.tagName === 'BUTTON')) return closeHitDetails();
     const target = event.target.closest('button');
@@ -273,7 +308,16 @@ function wireSearchDelegates() {
         return renderSearchPage();
       }
       if (target.dataset.geo !== undefined) return applyGeoPreset(target.dataset.geo);
-      if (target.id === 'clear-filters') return clearFilters();
+      if (target.id === 'clear-filters' || target.id === 'empty-clear') return clearFilters();
+      if (target.id === 'retry-search') return runSearch();
+      if (target.id === 'retry-saved') return loadSavedSearches();
+      if (target.id === 'keyword-recovery') { state.request.mode = 'keyword'; return runSearch(); }
+      if (target.id === 'toggle-filters') {
+        const visible = target.getAttribute('aria-expanded') !== 'true';
+        target.setAttribute('aria-expanded', String(visible));
+        document.querySelector('#search-filters').classList.toggle('mobile-open', visible);
+        return;
+      }
       if (target.id === 'prev-page') {
         state.request.page -= 1;
         return runSearch();
@@ -291,14 +335,17 @@ function wireSearchDelegates() {
         applySavedSearchOnly(saved.id);
         return;
       }
-      if (target.dataset.backfill) {
-        await api('/api/sync/backfill', { method: 'POST', body: JSON.stringify({ provider: target.dataset.backfill }) });
-        await runSearch();
-        return;
-      }
-      if (target.id === 'run-worker') {
-        await api('/api/sync/worker/run', { method: 'POST', body: '{}' });
-        await runSearch();
+      if (target.dataset.backfill || target.id === 'run-worker') {
+        if (state.operation) return;
+        state.operation = target.dataset.backfill ? `Backfill ${target.dataset.backfill}` : 'Sync worker';
+        state.operationError = null;
+        renderSearchPage();
+        try {
+          await api(target.dataset.backfill ? '/api/sync/backfill' : '/api/sync/worker/run', {
+            method: 'POST', body: JSON.stringify(target.dataset.backfill ? { provider: target.dataset.backfill } : {})
+          });
+        } catch (error) { state.operationError = error.message; }
+        finally { state.operation = null; await refreshStatus(); renderSearchPage(); }
         return;
       }
       if (target.id === 'mark-sold') {
@@ -312,6 +359,7 @@ function wireSearchDelegates() {
 
     const card = event.target.closest('.result[data-open-hit]');
     if (card && app.contains(card)) return openHitDetails(card.dataset.openHit);
+    } catch (error) { state.operationError = error.message; renderSearchPage(); }
   });
   app.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') return closeHitDetails();
@@ -327,7 +375,9 @@ function wireSearchDelegates() {
 function renderSearchPage() {
   if (!document.querySelector('#search-filters')) {
     app.innerHTML = `
+      <div id="system-summary">${renderSystemStrip()}</div>
       ${renderToolbar()}
+      <button id="toggle-filters" class="mobile-filter-toggle" aria-controls="search-filters" aria-expanded="false">Show or hide filters</button>
       <div class="layout">
         <div id="search-filters"></div>
         <div id="search-results"></div>

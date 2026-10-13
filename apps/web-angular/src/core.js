@@ -22,6 +22,14 @@ const state = {
   selectedHitId: null,
   request: requestFromUrl(),
   sync: null,
+  storageMode: null,
+  embeddings: null,
+  isSearching: false,
+  searchError: null,
+  savedSearchesLoading: true,
+  savedSearchesError: null,
+  operation: null,
+  operationError: null,
   searchRequestId: 0
 };
 
@@ -68,7 +76,10 @@ async function api(path, options = {}) {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
   });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `${response.status} ${response.statusText}`);
+  }
   return response.json();
 }
 
@@ -101,6 +112,13 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
+// Polling must not remove the keyboard user's current control.
+function setHtmlPreservingFocus(element, html) {
+  const focused = element.contains(document.activeElement) ? document.activeElement.id : null;
+  element.innerHTML = html;
+  if (focused) element.querySelector(`#${CSS.escape(focused)}`)?.focus({ preventScroll: true });
+}
+
 function provider() {
   return state.providers.find((item) => item.id === state.request.provider) || state.providers[0];
 }
@@ -110,7 +128,7 @@ function savedSearchLabel(id) {
 }
 
 function savedSearchCountLabel(search) {
-  return String(search.currentHitCount ?? 0);
+  return search.currentHitCount == null || search.evaluationError ? '?' : String(search.currentHitCount);
 }
 
 function filterValue(key, value) {
@@ -136,6 +154,7 @@ export {
   savedSearchLabel,
   selectedFilterValues,
   selectedHit,
+  setHtmlPreservingFocus,
   state,
   syncUrl,
   titleLabel

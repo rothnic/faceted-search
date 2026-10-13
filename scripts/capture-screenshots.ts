@@ -25,7 +25,7 @@ async function waitForServer() {
 async function ensureServer() {
   if (await isReachable()) return;
   server = spawn('npm', ['run', 'dev'], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: '5173' },
+    env: { ...process.env, HOST: '127.0.0.1', PORT: new URL(baseURL).port || '5173' },
     stdio: 'inherit'
   });
   await waitForServer();
@@ -65,7 +65,7 @@ async function waitForSearchReady(page: Page, expected?: { loaded?: number; tota
 
 async function main() {
   await ensureServer();
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   const page = await browser.newPage({ baseURL, viewport: { width: 1366, height: 900 } });
 
   await page.request.post('/api/seed');
@@ -85,7 +85,7 @@ async function main() {
   await waitForSearchReady(page, { loaded: 18, total: 35 });
   await capture(page, 'docs/screenshots/search-suggestions.png');
 
-  await goto(page, '/search');
+  await goto(page, '/search?mode=keyword');
   await waitForSearchReady(page);
   const saved = page.locator('.facet-group[data-facet="saved-searches"] .facet-option').filter({ hasText: 'Waterfront home near Huntsville' });
   await saved.locator('input').check();
@@ -96,6 +96,17 @@ async function main() {
   await goto(page, '/providers');
   await page.getByRole('heading', { name: 'Provider Comparison' }).waitFor();
   await capture(page, 'docs/screenshots/provider-comparison.png');
+
+  await goto(page, '/system');
+  await page.getByRole('heading', { name: 'External indexes' }).waitFor();
+  await capture(page, 'docs/screenshots/system-status.png');
+  await goto(page, '/schema');
+  await page.locator('#schema-count').waitFor();
+  await capture(page, 'docs/screenshots/schema-explorer.png');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await goto(page, '/search?mode=keyword&q=garage');
+  await waitForSearchReady(page);
+  await capture(page, 'docs/screenshots/mobile-search.png');
 
   await browser.close();
 }

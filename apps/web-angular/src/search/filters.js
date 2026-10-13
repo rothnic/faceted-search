@@ -85,11 +85,12 @@ export function renderFilters() {
         </div>
         ${state.savedSearches.map((search) => `
           <label class="facet-option">
-            <input type="checkbox" data-saved-search="${search.id}" ${savedIds.has(search.id) ? 'checked' : ''} />
+            <input type="checkbox" id="saved-filter-${escapeHtml(search.id)}" data-saved-search="${escapeHtml(search.id)}" ${savedIds.has(search.id) ? 'checked' : ''} />
             <span>${escapeHtml(search.name)}</span>
-            <span class="count">${savedSearchCountLabel(search)}</span>
+            <span class="count" title="${escapeHtml(search.evaluationError || 'Current match count')}">${savedSearchCountLabel(search)}</span>
           </label>
-        `).join('') || '<span class="stats">No saved searches yet</span>'}
+        `).join('') || `<span class="stats">${state.savedSearchesLoading ? 'Evaluating saved searches…' : state.savedSearchesError ? 'Saved searches unavailable' : 'No saved searches yet'}</span>`}
+        ${state.savedSearchesError ? `<p class="notice error">${escapeHtml(state.savedSearchesError)}</p><button id="retry-saved">Retry saved searches</button>` : ''}
         ${savedIds.size > 1 ? '<span class="stats">Selected saved searches are ORed together.</span>' : ''}
       </div>
       ${renderFacetGroup('City', 'city')}
