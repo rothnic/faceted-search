@@ -41,18 +41,16 @@ export function renderResultCard(hit) {
   `;
 }
 
-const filterToggle = () => `<button id="toggle-filters" class="btn btn-sm mobile-filter-toggle" aria-label="Show or hide filters" aria-controls="search-filters" aria-expanded="${Boolean(document.querySelector('#search-filters.mobile-open'))}">Filters</button>`;
-
 export function renderResults() {
   const response = state.response;
-  if (state.searchError) return `${filterToggle()}<section class="panel"><h2>Search unavailable</h2><p class="notice error" role="alert">${escapeHtml(state.searchError)}</p><p>Your criteria are preserved. You can retry or try keyword search.</p><div class="action-row"><button class="btn btn-sm btn-outline" id="retry-search">Retry search</button><button class="btn btn-sm btn-outline" id="keyword-recovery">Use keyword search</button></div></section>`;
-  if (!response) return filterToggle() + '<section class="panel" aria-busy="true"><h2>Results</h2><p role="status">Searching… Semantic searches may need to download and initialize the local CPU model on first use.</p><div class="loading-skeleton" aria-hidden="true"></div><div class="loading-skeleton" aria-hidden="true"></div></section>';
+  if (state.searchError) return `<section class="panel"><h2>Search unavailable</h2><p class="notice error" role="alert">${escapeHtml(state.searchError)}</p><p>Your criteria are preserved. You can retry or try keyword search.</p><div class="action-row"><button class="btn btn-sm btn-outline" id="retry-search">Retry search</button><button class="btn btn-sm btn-outline" id="keyword-recovery">Use keyword search</button></div></section>`;
+  if (!response) return '<section class="panel" aria-busy="true"><h2>Results</h2><p role="status">Searching… Semantic searches may need to download and initialize the local CPU model on first use.</p><div class="loading-skeleton" aria-hidden="true"></div><div class="loading-skeleton" aria-hidden="true"></div></section>';
   return `
     <section class="results-panel">
       <div class="results-head">
         <h2>Homes <span class="result-total">${response.totalHits}</span></h2>
         ${renderRefinements()}
-        <div class="result-tools">${filterToggle()}<button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button>
+        <div class="result-tools"><button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button>
           <details class="result-info" id="result-info"><summary id="result-info-toggle" aria-label="Search result information">ⓘ</summary><div class="result-info-content">
             <p class="stats">${response.totalHits} hits from ${response.providerLabel} in ${response.processingTimeMs} ms</p>
             <p class="confidence-note">${state.request.mode === 'keyword' ? 'Keyword relevance' : state.request.mode === 'semantic' ? 'Semantic similarity' : 'Hybrid relevance'} scores are ordering signals, not confidence percentages.</p>

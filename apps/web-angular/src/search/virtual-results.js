@@ -22,7 +22,7 @@ function loadedResultsStatus() {
   if (!state.response) return '';
   if (state.loadMoreError) return `Could not load more listings: ${state.loadMoreError}. Change the search or retry below.`;
   if (state.isLoadingMore) return `Loading more listings... ${state.response.hits.length} of ${state.response.totalHits} loaded`;
-  if (hasNextResultsPage()) return `${state.response.hits.length} of ${state.response.totalHits} loaded. Scroll for more.`;
+  if (hasNextResultsPage()) return `${state.response.hits.length} of ${state.response.totalHits} loaded.`;
   return `All ${state.response.totalHits} matching listings loaded.`;
 }
 

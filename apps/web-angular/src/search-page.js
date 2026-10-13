@@ -237,6 +237,10 @@ export async function loadSavedSearches() {
 }
 
 function updateToolbarControls() {
+  const activeCount = Object.values(state.request.filters).reduce((count,value) => count + (Array.isArray(value) ? value.length : value !== undefined && value !== '' ? 1 : 0), 0) + (state.request.savedSearchIds?.length || 0) + Number(Boolean(state.request.geo)) + Number(Boolean(state.request.viewport));
+  const countBadge = document.querySelector('#active-filter-count');
+  if (countBadge) { countBadge.textContent = String(activeCount); countBadge.hidden = !activeCount; countBadge.setAttribute('aria-label', `${activeCount} active filters`); }
+
   const searchBoxInput = document.querySelector('#search-box');
   if (searchBoxInput && searchBoxInput.value !== (state.request.q || '')) searchBoxInput.value = state.request.q || '';
   const providerSelect = document.querySelector('#provider');
@@ -276,6 +280,9 @@ function wireSearchToolbar() {
 }
 
 function wireSearchContent() {
+  document.querySelector('#mobile-provider')?.addEventListener('change', (event) => { state.request.provider = event.target.value; state.request.page = 1; runSearch(); });
+  document.querySelector('#mobile-mode')?.addEventListener('change', (event) => { state.request.mode = event.target.value; state.request.page = 1; runSearch(); });
+
   document.querySelectorAll('[data-filter]').forEach((input) => input.addEventListener('change', () => setFilter(input.dataset.filter, input.value, input.checked)));
   document.querySelectorAll('[data-saved-search]').forEach((input) => input.addEventListener('change', () => setSavedSearch(input.dataset.savedSearch, input.checked)));
   document.querySelectorAll('[data-range]').forEach((input) => input.addEventListener('change', () => setRange(input.dataset.range, input.value)));
@@ -367,6 +374,7 @@ function wireSearchDelegates() {
   });
   app.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
+      updateSearchSuggestions(false);
       const disclosure = event.target.closest?.('.system-info[open], .result-info[open]');
       if (disclosure) { disclosure.open = false; disclosure.querySelector('summary')?.focus(); }
       return closeHitDetails();
@@ -394,7 +402,7 @@ function renderSearchPage() {
     wireSearchDelegates();
   }
   updateToolbarControls();
-  document.querySelector('#search-filters').innerHTML = renderFilters();
+  setHtmlPreservingFocus(document.querySelector('#search-filters'), renderFilters());
   document.querySelector('#search-results').innerHTML = renderResults();
   setHtmlPreservingFocus(document.querySelector('#search-debug'), renderDebug(requestBody));
   syncHitDialog();

@@ -17,13 +17,7 @@ export function renderResultMap() {
       <div class="map-head">
         <div>
           <strong>Map</strong>
-          <span class="stats">${hitsForMap.length} matching listings</span>
-        </div>
-        <div class="map-legend" aria-label="Map marker legend">
-          ${legendTypes.map((type) => {
-            const style = propertyTypeStyle(type);
-            return `<span><i style="background:${style.color}"></i>${escapeHtml(style.label)}</span>`;
-          }).join('')}
+          <details class="map-key"><summary>Map key</summary><div class="map-legend" aria-label="Map marker legend">${legendTypes.map((type) => { const style = propertyTypeStyle(type); return `<span><i style="background:${style.color}"></i>${escapeHtml(style.label)}</span>`; }).join('')}</div></details>
         </div>
       </div>
       <div id="result-map" data-map-state="loading" class="leaflet-result-map" role="img" aria-label="Interactive map of matching search results"></div>

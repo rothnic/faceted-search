@@ -223,3 +223,45 @@ h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
 @media(max-width:760px) { .system-info > summary { min-height:44px; } }
 
 .results-head { position:relative; z-index:2; }
+/* Aligned labels and distinct selection controls; mobile prioritizes search. */
+.toolbar { grid-template-columns:auto minmax(260px,1fr) 108px 180px 128px; gap:12px; }
+.toolbar .field { grid-template-rows:16px 42px; align-content:end; gap:4px; }
+.toolbar .field > label { display:block; height:16px; min-height:16px; margin:0; padding:0; line-height:16px; font-size:10px; }
+.toolbar .input,.toolbar .select,#search-box { height:42px; min-height:42px; }
+#search-box { background-color:#fff; border-color:#9ab8aa; font-size:15px; }
+.toolbar select.select { appearance:none; background-color:#edf3ef; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%2312715c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 11px center; background-size:16px; border-color:#c5d5cc; padding-right:32px; font-weight:550; }
+.search-input-wrap > svg { top:12px; }
+.mobile-search-actions,.mobile-provider-controls { display:none; }
+.mobile-filter-toggle svg { width:18px; height:18px; stroke:currentColor; stroke-width:1.8; fill:none; stroke-linecap:round; }
+.filter-count { display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:10px; background:#fff; color:var(--accent-dark); font-size:10px; }
+.filter-count[hidden] { display:none; }
+.map-key { position:relative; }
+.map-key > summary { padding:0 4px; min-height:28px; display:flex; align-items:center; cursor:pointer; font-size:11px; color:var(--muted); }
+.map-key .map-legend { position:absolute; right:0; top:100%; z-index:800; width:190px; padding:12px; display:grid; gap:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); box-shadow:0 4px 16px #18302b15; font-size:11px; }
+.map-feedback[data-state=ready] { display:none; }
+@media(max-width:1120px) { .toolbar { grid-template-columns:minmax(200px,1fr) 108px 170px 128px; } }
+@media(max-width:760px) {
+ .toolbar { grid-template-columns:minmax(0,1fr) 44px 44px; gap:8px 10px; }
+ .toolbar .field { grid-template-rows:16px 44px; }
+ .toolbar .mode-field,.toolbar .provider-field { display:none; }
+ .toolbar .search-field { grid-column:1/-1; grid-row:1; }
+ .toolbar .input,.toolbar .select,#search-box { height:44px; min-height:44px; }
+ #search-box { font-size:14px; }
+ .search-input-wrap > svg { top:13px; }
+ .toolbar .sort-field { grid-column:2; grid-row:2; align-self:end; display:block; }
+ .toolbar .sort-field > label,.toolbar-heading h1 { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+ .toolbar .sort-field select { width:44px; padding:0; color:transparent; font-size:0; background-position:center; background-size:20px; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M6 3v14m-3-3 3 3 3-3M14 17V3m-3 3 3-3 3 3' fill='none' stroke='%2312715c' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+ .toolbar .sort-field option { color:var(--text); font-size:14px; }
+ .toolbar-heading { grid-column:3; grid-row:2; justify-content:flex-end; }
+ .toolbar-heading #system-summary { width:auto; }
+ .system-info > summary { width:44px; justify-content:center; font-size:0; border:1px solid var(--line); border-radius:7px; }
+ .system-info > summary::before { font-size:17px; }
+ .mobile-search-actions { display:flex; grid-column:1; grid-row:2; }
+ .mobile-search-actions .mobile-filter-toggle { display:flex; flex:1; justify-content:center; min-height:44px; height:44px; padding:0 9px; margin:0; font-size:12px; background:var(--accent); color:#fff; border-color:var(--accent); }
+ .mobile-provider-controls { display:grid; gap:10px; margin:12px 0; }
+ .mobile-provider-controls .select { height:44px; min-height:44px; background-color:#edf3ef; appearance:auto; }
+ .result-list-scroll { padding-right:0; scrollbar-gutter:auto; scrollbar-width:none; }
+ .result-list-scroll::-webkit-scrollbar { display:none; }
+ .suggestions { width:100%; left:0; right:auto; }
+ .map-key > summary { min-height:44px; }
+}

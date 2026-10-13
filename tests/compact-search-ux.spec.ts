@@ -1,6 +1,6 @@
 import {expect,test} from '@playwright/test';
 
-for (const viewport of [{width:1366,height:900},{width:390,height:844}]) {
+for (const viewport of [{width:1366,height:900},{width:390,height:844},{width:320,height:844}]) {
   test(`compact controls keep results above the fold at ${viewport.width}px`, async ({page}) => {
     await page.setViewportSize(viewport);
     await page.goto('/search?mode=keyword&q=garage');
@@ -16,6 +16,12 @@ for (const viewport of [{width:1366,height:900},{width:390,height:844}]) {
     await expect(page.locator('[data-virtual-summary]')).toBeVisible();
     await page.locator('#result-info-toggle').press('Escape');
     await expect(page.locator('#result-info')).not.toHaveAttribute('open');
+    await expect(page.locator('.map-key')).not.toHaveAttribute('open');
+    const visibleCountCopies = await page.evaluate(() => {
+      const text = [...document.querySelectorAll<HTMLElement>('.results-head,.map-head')].map(e=>e.innerText).join(' ');
+      return (text.match(/\b35\b/g)||[]).length;
+    });
+    expect(visibleCountCopies).toBe(1);
     const geometry = await page.evaluate(() => {
       const cards = [...document.querySelectorAll('.result')].map((card) => card.getBoundingClientRect());
       const warningHeight = [...document.querySelectorAll('.execution-warning')].reduce((height,element) => height + element.getBoundingClientRect().height + parseFloat(getComputedStyle(element).marginBottom), 0);
@@ -27,24 +33,64 @@ for (const viewport of [{width:1366,height:900},{width:390,height:844}]) {
     expect(geometry.firstResultY).toBeLessThan(viewport.width<760?600:440);
     expect(geometry.fullyVisible).toBeGreaterThanOrEqual(1);
     expect(geometry.overflow).toBe(false);
-    for (const id of ['search-box','search-mode','provider','sort']) {
-      const box = await page.locator(`#${id}`).boundingBox();
-      expect(box?.height).toBeGreaterThanOrEqual(viewport.width<760?44:40);
-    }
     if (viewport.width < 760) {
-      await page.getByRole('button',{name:'Show or hide filters'}).click();
+      await expect(page.locator('#search-mode')).toBeHidden();
+      await expect(page.locator('#provider')).toBeHidden();
+      const inputBox = (await page.locator('#search-box').boundingBox())!;
+      const sortBox = (await page.locator('#sort').boundingBox())!;
+      const filterBox = (await page.locator('#toggle-filters').boundingBox())!;
+      expect(inputBox.height).toBeGreaterThanOrEqual(44);
+      expect(sortBox.height).toBeGreaterThanOrEqual(44);
+      expect(filterBox.height).toBeGreaterThanOrEqual(44);
+      expect(filterBox.y).toBeGreaterThanOrEqual(inputBox.y+inputBox.height);
+      expect(Math.abs(filterBox.y-sortBox.y)).toBeLessThan(1);
+      const cardBox = (await page.locator('.result').first().boundingBox())!;
+      expect(Math.abs(cardBox.x-(viewport.width-cardBox.x-cardBox.width))).toBeLessThanOrEqual(2);
+      await page.locator('#search-box').fill('gar');
+      await expect(page.locator('#search-suggestions')).toBeVisible();
+      const menu = (await page.locator('#search-suggestions').boundingBox())!;
+      expect(Math.abs(menu.x-inputBox.x)).toBeLessThan(1);
+      expect(Math.abs(menu.width-inputBox.width)).toBeLessThan(1);
+      expect(menu.y).toBeGreaterThanOrEqual(inputBox.y+inputBox.height);
+      await page.locator('#search-box').fill('garage');
+      await page.locator('#search-box').press('Escape');
+      await expect(page.locator('#search-suggestions')).toBeHidden();
+      await page.locator('#toggle-filters').click();
+      await expect(page.locator('#mobile-provider')).toBeVisible();
+      await expect(page.locator('#mobile-mode')).toBeVisible();
+      await page.locator('#mobile-mode').focus();
+      await page.locator('#mobile-mode').selectOption('semantic');
+      await expect(page).toHaveURL(/mode=semantic/);
+      await expect(page.locator('#mobile-mode')).toBeFocused();
+      await page.locator('#mobile-mode').selectOption('keyword');
+      await page.locator('#mobile-provider').focus();
+      await page.locator('#mobile-provider').selectOption('meilisearch');
+      await expect(page).toHaveURL(/provider=meilisearch/);
+      await expect(page.locator('#mobile-provider')).toBeFocused();
+      const optionStyle = await page.locator('#sort option').first().evaluate(e=>({font:getComputedStyle(e).fontSize,color:getComputedStyle(e).color}));
+      expect(parseFloat(optionStyle.font)).toBeGreaterThanOrEqual(14);
+      expect(optionStyle.color).not.toBe('rgba(0, 0, 0, 0)');
+      await expect(page).toHaveURL(/mode=keyword/);
+      await page.locator('[data-facet="city"] input').first().check();
+      await expect(page.locator('#active-filter-count')).toHaveText('1');
       const close = page.getByRole('button',{name:'Show results',exact:true});
-      await expect(close).toBeVisible();
-      const closeBox = await close.boundingBox();
-      expect(closeBox!.y + closeBox!.height).toBeLessThan(viewport.height);
       await close.click();
       await expect(page.locator('#search-filters')).toBeHidden();
       await expect(page.locator('#toggle-filters')).toBeFocused();
+    } else {
+      const controls = await page.evaluate(() => ['search-box','search-mode','provider','sort'].map(id => {
+        const input = document.getElementById(id)!; const label = document.querySelector(`label[for="${id}"]`)!;
+        return {labelY:label.getBoundingClientRect().y,inputY:input.getBoundingClientRect().y,height:input.getBoundingClientRect().height,background:getComputedStyle(input).backgroundColor,arrow:getComputedStyle(input).backgroundImage};
+      }));
+      expect(Math.max(...controls.map(c=>c.labelY))-Math.min(...controls.map(c=>c.labelY))).toBeLessThan(1);
+      expect(Math.max(...controls.map(c=>c.inputY))-Math.min(...controls.map(c=>c.inputY))).toBeLessThan(1);
+      expect(controls[0].background).not.toBe(controls[1].background);
+      for (const control of controls.slice(1)) { expect(control.arrow).toContain('data:image/svg+xml'); expect(control.height).toBeGreaterThanOrEqual(40); }
+      await page.getByLabel('Mode',{exact:true}).selectOption('semantic');
+      await expect(page).toHaveURL(/mode=semantic/);
+      await page.getByLabel('Mode',{exact:true}).selectOption('keyword');
+      await expect(page).toHaveURL(/mode=keyword/);
     }
-    await page.getByLabel('Mode',{exact:true}).selectOption('semantic');
-    await expect(page).toHaveURL(/mode=semantic/);
-    await expect(page.getByLabel('Mode',{exact:true})).toHaveValue('semantic');
-    await page.getByLabel('Mode',{exact:true}).selectOption('keyword');
-    await expect(page).toHaveURL(/mode=keyword/);
+    await expect(page.locator('body')).not.toContainText('Scroll for more');
   });
 }

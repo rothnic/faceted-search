@@ -55,7 +55,7 @@ test('provider switcher keeps the same UI while changing debug payloads', async 
     ['meilisearch', 'PostgreSQL + Meilisearch'],
     ['typesense', 'PostgreSQL + Typesense']
   ]) {
-    await page.getByLabel('Provider').selectOption(value);
+    await page.getByLabel('Provider', {exact:true}).selectOption(value);
     await expect(page.locator('#result-info .stats').first()).toContainText(label);
     await page.locator('#result-info-toggle').click();
     await expect(page.locator('.stats', { hasText: label })).toBeVisible();
