@@ -10,7 +10,7 @@ export async function renderSchema() {
     content.innerHTML = `<section class="panel"><div class="action-row"><span class="status-badge">${e(storageLabel(schema.storageMode))}</span><span class="status-badge">Application DDL · not live introspection</span></div>
       <p class="notice">${e(schema.note)}</p>
       <p class="stats">Generated from the same SQL used to initialize PostgreSQL. No database rows, credentials or connection strings are shown.</p>
-      <div class="field"><label for="schema-filter">Find a table or field</label><input type="search" id="schema-filter" placeholder="houses, city_id, jsonb…" /></div>
+      <div class="field"><label for="schema-filter">Find a table or field</label><input class="input input-sm" type="search" id="schema-filter" placeholder="houses, city_id, jsonb…" /></div>
       <p id="schema-count" class="stats" role="status"></p><div id="schema-tables"></div></section>`;
     const draw = () => {
       const query = document.querySelector('#schema-filter').value.trim().toLowerCase();
@@ -26,5 +26,5 @@ export async function renderSchema() {
     };
     document.querySelector('#schema-filter').addEventListener('input', draw);
     draw();
-  } catch (error) { content.innerHTML = `<p class="notice error" role="alert">Schema unavailable: ${e(error.message)}</p><button id="retry-schema">Retry schema</button>`; document.querySelector('#retry-schema').onclick = renderSchema; }
+  } catch (error) { content.innerHTML = `<p class="notice error" role="alert">Schema unavailable: ${e(error.message)}</p><button class="btn btn-sm btn-outline" id="retry-schema">Retry schema</button>`; document.querySelector('#retry-schema').onclick = renderSchema; }
 }

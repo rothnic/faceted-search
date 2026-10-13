@@ -72,7 +72,7 @@ function renderHitDialog() {
             <h2 id="detail-title">${escapeHtml(hit.title)}</h2>
             <p>${escapeHtml(hit.description)}</p>
           </div>
-          <button type="button" class="icon-button" data-close-dialog="true" aria-label="Close details">x</button>
+          <button type="button" class="btn btn-sm icon-button" data-close-dialog="true" aria-label="Close details">x</button>
         </div>
         <div class="detail-body">
           <section>
@@ -89,7 +89,7 @@ function renderHitDialog() {
           </section>
           <section>
             <h3>Amenities</h3>
-            <div class="amenities">${hit.amenities.map((item) => `<button type="button" class="pill hit-chip" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div>
+            <div class="amenities">${hit.amenities.map((item) => `<button type="button" class="btn btn-sm pill hit-chip" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div>
           </section>
           <section>
             <h3>Tags</h3>

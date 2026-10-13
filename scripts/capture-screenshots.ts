@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { chromium, type Page } from '@playwright/test';
 
@@ -32,6 +33,7 @@ async function ensureServer() {
 }
 
 async function capture(page: Page, path: string) {
+  if (await page.locator('#result-map').count()) await waitForMapTiles(page);
   await page.evaluate(() => {
     document.querySelectorAll('.stats').forEach((element) => {
       element.textContent = element.textContent?.replace(/ in \d+(\.\d+)? ms/g, ' in 0.0 ms') ?? '';
@@ -63,11 +65,35 @@ async function waitForSearchReady(page: Page, expected?: { loaded?: number; tota
   );
 }
 
+async function waitForMapTiles(page: Page) {
+  try {
+    await page.waitForFunction(() => {
+      const map = document.querySelector<HTMLElement>('#result-map');
+      const tiles = [...(map?.querySelectorAll<HTMLImageElement>('.leaflet-tile-container img') ?? [])];
+      return map?.dataset.mapState === 'ready' && tiles.length > 0 && tiles.every((tile) => tile.complete && tile.naturalWidth > 0);
+    }, undefined, { timeout: 20_000 });
+  } catch (error) {
+    await mkdir('test-results', { recursive: true });
+    const diagnostic = await page.evaluate(() => ({
+      url: location.href,
+      state: document.querySelector<HTMLElement>('#result-map')?.dataset,
+      tiles: [...document.querySelectorAll<HTMLImageElement>('.leaflet-tile-container img')].map((tile) => ({src: tile.currentSrc, complete: tile.complete, width: tile.naturalWidth})),
+      message: document.querySelector('.map-feedback')?.textContent
+    }));
+    await writeFile('test-results/map-readiness.json', JSON.stringify(diagnostic, null, 2));
+    await page.screenshot({path:'test-results/map-readiness-failure.png', fullPage:true});
+    throw new Error(`Map tiles did not load; diagnostics: test-results/map-readiness.json. ${String(error)}`);
+  }
+}
+
 async function main() {
   await ensureServer();
-  const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
+  const browser = await chromium.launch({ headless: process.env.SCREENSHOT_HEADED !== '1', executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
+  try {
   const page = await browser.newPage({ baseURL, viewport: { width: 1366, height: 900 } });
 
+  page.on('requestfailed', (request) => console.error('REQUEST FAILED', request.url(), request.failure()?.errorText));
+  page.on('response', (response) => { if (response.url().includes('tile.openstreetmap.org') && !response.ok()) console.error('TILE HTTP',response.status(),response.url()); });
   await page.request.post('/api/seed');
 
   await goto(page, '/search?mode=keyword&q=hampton%20cove%20garage');
@@ -83,6 +109,10 @@ async function main() {
   await page.getByRole('textbox', { name: 'Search' }).fill('gar');
   await page.getByRole('button', { name: /garage\s+Amenity/i }).waitFor();
   await waitForSearchReady(page, { loaded: 18, total: 35 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const inputBox = await page.getByRole('textbox', { name: 'Search' }).boundingBox();
+  const suggestionBox = await page.locator('#search-suggestions').boundingBox();
+  if (!inputBox || inputBox.y < 0 || !suggestionBox || suggestionBox.y < inputBox.y || suggestionBox.y + suggestionBox.height > 900) throw new Error('Suggestions screenshot must include the input and suggestion menu in the viewport');
   await capture(page, 'docs/screenshots/search-suggestions.png');
 
   await goto(page, '/search?mode=keyword');
@@ -108,7 +138,7 @@ async function main() {
   await waitForSearchReady(page);
   await capture(page, 'docs/screenshots/mobile-search.png');
 
-  await browser.close();
+  } finally { await browser.close(); }
 }
 
 main()

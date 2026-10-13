@@ -115,7 +115,9 @@ function escapeHtml(value) {
 // Polling must not remove the keyboard user's current control.
 function setHtmlPreservingFocus(element, html) {
   const focused = element.contains(document.activeElement) ? document.activeElement.id : null;
+  const openDetails = [...element.querySelectorAll('details[id][open]')].map((item) => item.id);
   element.innerHTML = html;
+  openDetails.forEach((id) => { const details = element.querySelector(`#${CSS.escape(id)}`); if (details) details.open = true; });
   if (focused) element.querySelector(`#${CSS.escape(focused)}`)?.focus({ preventScroll: true });
 }
 

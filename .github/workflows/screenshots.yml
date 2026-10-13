@@ -31,3 +31,9 @@ jobs:
         with:
           name: screenshots
           path: docs/screenshots/*.png
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: map-readiness-diagnostics
+          path: test-results/map-readiness*
+          if-no-files-found: ignore

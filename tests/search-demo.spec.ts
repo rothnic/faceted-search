@@ -59,6 +59,7 @@ test('provider switcher keeps the same UI while changing debug payloads', async 
     await expect(page.locator('.stats', { hasText: label })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Quiet cul-de-sac home/i })).toBeVisible();
   }
+  await page.locator('#diagnostics-toggle').click();
   await expect(page.locator('#search-debug').getByText(/collection/i)).toBeVisible();
 });
 
@@ -341,11 +342,13 @@ test('external provider sync demo shows outbox, backfill, and worker processing'
   await page.goto('/search?mode=keyword&provider=meilisearch&q=madison%20starter%20home');
   await expect(page.getByRole('heading', { name: /Madison starter home/i })).toBeVisible();
 
+  await page.locator('#diagnostics-toggle').click();
   await page.getByRole('button', { name: 'Backfill Meili' }).click();
   await expect(page.getByText(/"backfillStatus": "complete"/i)).toBeVisible();
 
   await request.patch('/api/houses/target-madison-starter', { data: { price: 279000 } });
   await page.reload();
+  await page.locator('#diagnostics-toggle').click();
   await expect(page.getByText(/"outboxPendingCount": 2/i)).toBeVisible();
 
   await page.getByRole('button', { name: 'Run worker' }).click();

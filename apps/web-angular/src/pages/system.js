@@ -28,9 +28,9 @@ function renderSnapshot() {
         <span class="status-badge">Backfill: ${e(label(provider.backfillStatus))}</span>
         <dl class="status-facts"><dt>Recorded indexed</dt><dd>${e(provider.documentsIndexed)}</dd><dt>Recorded deleted</dt><dd>${e(provider.documentsDeleted)}</dd><dt>Last sync</dt><dd>${provider.lastSyncTime ? e(new Date(provider.lastSyncTime).toLocaleString()) : 'Never recorded'}</dd></dl>
         ${provider.lastSyncError ? `<p class="notice error">${e(provider.lastSyncError)}</p>` : '<p class="stats">No recorded sync error</p>'}
-        <button id="system-backfill-${e(name)}" data-system-action="backfill" data-provider="${e(name)}" ${state.operation ? 'disabled' : ''}>${state.storageMode === 'memory' ? 'Simulate' : 'Run'} ${e(label(name))} backfill</button>
+        <button class="btn btn-sm btn-outline" id="system-backfill-${e(name)}" data-system-action="backfill" data-provider="${e(name)}" ${state.operation ? 'disabled' : ''}>${state.storageMode === 'memory' ? 'Simulate' : 'Run'} ${e(label(name))} backfill</button>
       </article>`).join('')}</div>` : `<p class="notice error" role="alert">${e(state.syncError || 'Waiting for sync status')}</p>`}
-      <div class="action-row"><button id="system-worker" data-system-action="worker" ${state.operation || !sync ? 'disabled' : ''}>${state.storageMode === 'memory' ? 'Simulate worker once' : 'Run worker once'}</button></div>
+      <div class="action-row"><button class="btn btn-sm btn-outline" id="system-worker" data-system-action="worker" ${state.operation || !sync ? 'disabled' : ''}>${state.storageMode === 'memory' ? 'Simulate worker once' : 'Run worker once'}</button></div>
       <details ${rawOpen ? 'open' : ''}><summary id="system-raw-summary">Raw observed sync response</summary><pre>${e(JSON.stringify(sync, null, 2))}</pre></details>
     </section>`);
   document.querySelector('#operation-feedback').innerHTML = state.operation
@@ -40,7 +40,7 @@ function renderSnapshot() {
 }
 
 export async function renderSystem() {
-  app.innerHTML = `<section class="page-heading"><div><span class="eyebrow">Inspect the system</span><h1>System status</h1><p>What the API actually reports, with the limits made explicit.</p></div><button id="refresh-system">Refresh status</button></section><div id="operation-feedback"></div><div id="system-snapshot"><p role="status">Loading system status…</p></div>`;
+  app.innerHTML = `<section class="page-heading"><div><span class="eyebrow">Inspect the system</span><h1>System status</h1><p>What the API actually reports, with the limits made explicit.</p></div><button class="btn btn-sm btn-outline" id="refresh-system">Refresh status</button></section><div id="operation-feedback"></div><div id="system-snapshot"><p role="status">Loading system status…</p></div>`;
   document.querySelector('#refresh-system').addEventListener('click', async (event) => {
     event.target.disabled = true;
     await refreshStatus(); renderSnapshot(); event.target.disabled = false;

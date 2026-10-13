@@ -203,6 +203,7 @@ test('status polling preserves keyboard focus on disclosure, schema links and se
   await page.clock.fastForward(11000);
   await expect.poll(() => snapshots).toBeGreaterThan(previous);
   await expect(searchLink).toBeFocused();
+  await page.locator('#diagnostics-toggle').click();
   const backfill = page.locator('#debug-backfill-meili');
   await backfill.focus(); previous = snapshots;
   await page.clock.fastForward(11000);
@@ -213,4 +214,47 @@ test('status polling preserves keyboard focus on disclosure, schema links and se
   await page.clock.fastForward(11000);
   await expect.poll(() => snapshots).toBeGreaterThan(previous);
   await expect(debugLink).toBeFocused();
+});
+
+test('map tile failures stay explicit while listing markers remain usable', async ({ page }) => {
+  await page.route('https://tile.openstreetmap.org/**', (route) => route.abort('failed'));
+  await page.goto('/search?mode=keyword&q=garage');
+  await expect(page.locator('#result-map')).toHaveAttribute('data-map-state', 'error');
+  await expect(page.locator('.map-feedback')).toContainText('Map tiles unavailable');
+  await expect(page.locator('.leaflet-interactive').first()).toBeVisible();
+  await expect(page.getByRole('heading', {name: /Waterfront home near Huntsville/}).first()).toBeVisible();
+});
+
+test('suggestions retain a visible search input and desktop diagnostics start collapsed', async ({ page }) => {
+  await page.setViewportSize({width:1366,height:900});
+  await page.goto('/search?mode=keyword&q=garage');
+  await expect(page.locator('#search-diagnostics')).not.toHaveAttribute('open');
+  await expect(page.locator('#toggle-filters')).toBeHidden();
+  const input = page.getByRole('textbox', {name:'Search'});
+  await input.fill('gar');
+  await expect(page.getByRole('button', {name:/garage\s+Amenity/i})).toBeVisible();
+  const boxes = await page.evaluate(() => ['#search-box','#search-suggestions'].map((selector) => {
+    const r = document.querySelector(selector)!.getBoundingClientRect();
+    return {top:r.top,bottom:r.bottom};
+  }));
+  expect(boxes[0].top).toBeGreaterThan(0);
+  expect(boxes[1].top).toBeGreaterThanOrEqual(boxes[0].bottom);
+  expect(boxes[1].bottom).toBeLessThanOrEqual(900);
+});
+
+test('small muted text meets WCAG AA contrast against its rendered background', async ({ page }) => {
+  await page.goto('/search?mode=keyword&q=garage');
+  await expect(page.locator('.result-description').first()).toBeVisible();
+  const ratios = await page.evaluate(() => {
+    const luminance = (color: string) => {
+      const channels = color.match(/[\d.]+/g)!.slice(0,3).map(Number).map((n) => n / 255).map((n) => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4);
+      return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+    };
+    return [['.search-heading p','body'], ['.count','#search-filters .panel'], ['.result-description','.result'], ['.hit-chip','.hit-chip']].map(([text,background]) => {
+      const fg = luminance(getComputedStyle(document.querySelector(text)!).color);
+      const bg = luminance(getComputedStyle(document.querySelector(background)!).backgroundColor);
+      return {selector:text,ratio:(Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05)};
+    });
+  });
+  for (const {selector,ratio} of ratios) expect(ratio, selector).toBeGreaterThanOrEqual(4.5);
 });

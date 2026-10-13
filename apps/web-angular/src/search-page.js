@@ -47,7 +47,7 @@ function renderSearchSuggestions() {
   const suggestions = searchSuggestions(input?.value || '');
   if (!suggestions.length) return '<div class="suggestion-empty">No suggestions</div>';
   return suggestions.map((item) => `
-    <button type="button" class="suggestion-option" data-search-suggestion="${escapeHtml(item.query)}">
+    <button type="button" class="btn btn-sm suggestion-option" data-search-suggestion="${escapeHtml(item.query)}">
       <span>${escapeHtml(item.query)}</span>
       <span>${escapeHtml(item.type)}</span>
     </button>
@@ -375,14 +375,14 @@ function wireSearchDelegates() {
 function renderSearchPage() {
   if (!document.querySelector('#search-filters')) {
     app.innerHTML = `
-      <div id="system-summary">${renderSystemStrip()}</div>
       ${renderToolbar()}
-      <button id="toggle-filters" class="mobile-filter-toggle" aria-controls="search-filters" aria-expanded="false">Show or hide filters</button>
+      <div id="system-summary">${renderSystemStrip()}</div>
+      <button id="toggle-filters" class="btn btn-sm mobile-filter-toggle" aria-controls="search-filters" aria-expanded="false">Show or hide filters</button>
       <div class="layout">
         <div id="search-filters"></div>
         <div id="search-results"></div>
-        <div id="search-debug"></div>
       </div>
+      <div id="search-debug"></div>
     `;
     wireSearchToolbar();
     wireSearchDelegates();
@@ -390,7 +390,7 @@ function renderSearchPage() {
   updateToolbarControls();
   document.querySelector('#search-filters').innerHTML = renderFilters();
   document.querySelector('#search-results').innerHTML = renderResults();
-  document.querySelector('#search-debug').innerHTML = renderDebug(requestBody);
+  setHtmlPreservingFocus(document.querySelector('#search-debug'), renderDebug(requestBody));
   syncHitDialog();
   wireSearchContent();
   updateSearchSuggestions();

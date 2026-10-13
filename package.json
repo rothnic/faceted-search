@@ -33,8 +33,11 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
+    "@tailwindcss/vite": "4.3.3",
     "@types/node": "^22.9.0",
     "@types/pg": "^8.20.0",
+    "daisyui": "5.7.50",
+    "tailwindcss": "4.3.3",
     "vite": "^8.0.16"
   }
 }

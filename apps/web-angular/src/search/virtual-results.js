@@ -45,7 +45,7 @@ function renderVirtualRows() {
         data-index="${virtualRow.index}"
         style="transform: translateY(${virtualRow.start}px);"
       >
-        ${hit ? renderResultCard(hit) : `<div class="result loading-row">${escapeHtml(loadedResultsStatus())}${state.loadMoreError ? '<button type="button" data-retry-more>Retry more results</button>' : ''}</div>`}
+        ${hit ? renderResultCard(hit) : `<div class="result loading-row">${escapeHtml(loadedResultsStatus())}${state.loadMoreError ? '<button class="btn btn-sm btn-outline" type="button" data-retry-more>Retry more results</button>' : ''}</div>`}
       </div>
     `;
   }).join('');

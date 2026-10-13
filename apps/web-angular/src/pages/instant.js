@@ -142,7 +142,7 @@ export async function renderInstant(providerId) {
   const feedback = document.querySelector('#instant-feedback');
   search.on('error', (error) => {
     feedback.setAttribute('role', 'alert');
-    feedback.innerHTML = `<p class="notice error">Direct search engine unavailable: ${escapeHtml(error.message || 'Connection failed')}. Start and backfill the real service, then retry.</p><button id="retry-instant">Retry direct search</button> <a href="/search?mode=keyword">Use the main search</a>`;
+    feedback.innerHTML = `<p class="notice error">Direct search engine unavailable: ${escapeHtml(error.message || 'Connection failed')}. Start and backfill the real service, then retry.</p><button class="btn btn-sm btn-outline" id="retry-instant">Retry direct search</button> <a href="/search?mode=keyword">Use the main search</a>`;
     document.querySelector('#retry-instant').onclick = () => { feedback.setAttribute('role', 'status'); feedback.textContent = 'Retrying direct search…'; search.refresh(); };
   });
   search.on('render', () => {

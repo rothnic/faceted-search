@@ -26,5 +26,5 @@ async function route() {
 }
 
 route().catch((error) => {
-  app.innerHTML = `<section class="panel"><h2>Application error</h2><pre>${escapeHtml(error.message)}</pre><button onclick="location.reload()">Retry connection</button></section>`;
+  app.innerHTML = `<section class="panel"><h2>Application error</h2><pre>${escapeHtml(error.message)}</pre><button class="btn btn-sm btn-outline" onclick="location.reload()">Retry connection</button></section>`;
 });

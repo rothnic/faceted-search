@@ -20,7 +20,7 @@ export async function renderSavedSearches() {
             <pre>${escapeHtml(JSON.stringify(search.criteria, null, 2))}</pre>
             <div class="action-row">
               <a class="button-link" href="/search?savedSearchId=${encodeURIComponent(search.id)}">Apply</a>
-              <button data-evaluate="${search.id}">Evaluate now</button>
+              <button class="btn btn-sm btn-outline" data-evaluate="${search.id}">Evaluate now</button>
             </div>
           </article>
         `).join('') || '<p>No saved searches yet.</p>'}
