@@ -7,6 +7,8 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
     await expect(page.locator('.result').first()).toBeVisible();
     await expect(page.locator('.results-panel > .results-head .result-tools #save-search')).toBeVisible();
     await expect(page.locator('.results-panel > .results-workspace')).toBeVisible();
+    await expect(page.getByRole('textbox',{name:'Search',exact:true})).toHaveAttribute('placeholder','Search homes, neighborhoods, or features…');
+    expect(await page.locator('label[for="search-box"]').evaluate(e=>e.getBoundingClientRect().height)).toBe(1);
     const headline=(await page.locator('.results-head h2').boundingBox())!;
     const actions=(await page.locator('.result-tools').boundingBox())!;
     expect(Math.abs(headline.y+headline.height/2-actions.y-actions.height/2)).toBeLessThanOrEqual(1);
@@ -97,7 +99,7 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
         const input = document.getElementById(id)!; const label = document.querySelector(`label[for="${id}"]`)!;
         return {labelY:label.getBoundingClientRect().y,inputY:input.getBoundingClientRect().y,height:input.getBoundingClientRect().height,background:getComputedStyle(input).backgroundColor,arrow:getComputedStyle(input).backgroundImage};
       }));
-      expect(Math.max(...controls.map(c=>c.labelY))-Math.min(...controls.map(c=>c.labelY))).toBeLessThan(1);
+      expect(Math.max(...controls.slice(1).map(c=>c.labelY))-Math.min(...controls.slice(1).map(c=>c.labelY))).toBeLessThan(1);
       expect(Math.max(...controls.map(c=>c.inputY))-Math.min(...controls.map(c=>c.inputY))).toBeLessThan(1);
       expect(controls[0].background).not.toBe(controls[1].background);
       for (const control of controls.slice(1)) { expect(control.arrow).toContain('data:image/svg+xml'); expect(control.height).toBeGreaterThanOrEqual(40); }

@@ -16,6 +16,10 @@ const executionEvidence: unknown[] = [];
 async function capture(page: Page, path: string) {
   if (await page.locator('#search-diagnostics').count()) {
     await page.waitForFunction(() => {
+      const saved=document.querySelector('[data-facet="saved-searches"]');
+      return saved && !saved.textContent?.includes('Evaluating saved searches');
+    }, undefined, {timeout:45_000});
+    await page.waitForFunction(() => {
       try { return Boolean(JSON.parse(document.querySelector('#search-diagnostics pre')?.textContent || '{}').debug?.execution); } catch { return false; }
     });
     const diagnostic = JSON.parse((await page.locator('#search-diagnostics pre').first().textContent())!);
