@@ -26,4 +26,32 @@ The suggestions capture verifies both input and dropdown bounding boxes are with
 
 ## Verification
 
-The 32 local browser regressions passed after the redesign, including explicit tile-failure and suggestions/input visibility checks. Independent desktop, suggestions and 390px mobile visual review passed, including a contrast repair verified from computed styles. Exact-head CI and final full-size screenshot review are still pending. Standalone Chromium in the dot cloud workspace cannot reach the OSM tile endpoint (`ERR_CONNECTION_REFUSED`); the supported interactive browser loaded and visually confirmed 9/9 real tiles. The strict screenshot gate correctly fails this environment rather than publishing a gray map. Real-service appliance happy-path testing remains explicitly excluded from the local test gate, not counted as passed.
+Source commit `64708040bcc33656c9cf78e97021190acf958542` passed [CI run 38454179376](https://github.com/rothnic/faceted-search/actions/runs/38454179376): typecheck, real CPU inference verifier, all 32 serial local browser cases, and all eight strict screenshots. Artifact `11840919075` was downloaded and verified against its SHA-256 `6f5328cc2442e0f4884ca402daccd2cc641c0038a348e14cc4a1b04215d12efa`; its unchanged PNGs are committed here.
+
+Independent desktop, suggestions, 390px mobile, keyboard and contrast review passed. The contrast regression reads computed foreground/background colors. The map-failure test aborts tile requests and requires a visible honest error while listings and markers remain usable.
+
+Standalone Chromium in the dot cloud workspace could not reach OSM (`ERR_CONNECTION_REFUSED`), and strict capture correctly failed there. The supported interactive browser independently loaded 9/9 genuine tiles. A later local terminal-history rerun was denied and not retried; exact-head CI provides the final test/capture evidence. No security flags, user-agent spoofing or alternate access route were used.
+
+Real-service appliance happy-path testing remains explicitly excluded from the local gate, not counted as passed.
+
+## Before and after
+
+### Search results
+Before:
+![Previous search results](screenshots/before/search-results.png)
+After:
+![Redesigned search results with loaded map](screenshots/search-results.png)
+
+### Suggestions
+Before:
+![Previous suggestions crop](screenshots/before/search-suggestions.png)
+After:
+![Suggestions with the search input visible](screenshots/search-suggestions.png)
+
+### Mobile
+Before:
+![Previous mobile search](screenshots/before/mobile-search.png)
+After:
+![Redesigned mobile search](screenshots/mobile-search.png)
+
+Additional captures: [System](screenshots/system-status.png), [Schema](screenshots/schema-explorer.png), [Providers](screenshots/provider-comparison.png), [Listing details](screenshots/hit-details.png), [Saved search scope](screenshots/saved-search-scope.png).
