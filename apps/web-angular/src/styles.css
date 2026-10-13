@@ -1,4 +1,4 @@
-@layer legacy, theme, base, components, utilities;
+@layer theme, base, legacy, components, utilities;
 @import './legacy.css' layer(legacy);
 @import 'tailwindcss';
 @plugin 'daisyui' {
