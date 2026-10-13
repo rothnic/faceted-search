@@ -24,6 +24,8 @@ jobs:
       # Exercise real inference and warm the pinned model cache before browser capture.
       - run: npm run verify:embeddings
       - run: npx playwright install --with-deps chromium
+      - name: Local browser regressions (real services excluded)
+        run: npx playwright test --workers=1 --grep-invert @real-services
       - run: npm run screenshots:update
       - uses: actions/upload-artifact@v4
         with:
