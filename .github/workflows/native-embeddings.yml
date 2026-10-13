@@ -73,13 +73,14 @@ jobs:
       - name: Owned real browser acceptance and genuine-map screenshots across all four backends
         env:
           EMBEDDING_OFFLINE: '1'
+          SCREENSHOT_OUTPUT_DIR: test-results/real-screenshots
         run: npm run verify:real-browser
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: real-comparison-screenshots
           path: |
-            docs/screenshots/*.png
-            docs/screenshots/native-*-evidence.json
+            test-results/real-screenshots/
       - name: Record real-engine resource usage and diagnostics
         if: always()
         run: |

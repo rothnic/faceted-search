@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium, type Page } from '@playwright/test';
 
 const baseURL = process.env.SCREENSHOT_BASE_URL;
+const outputDir = process.env.SCREENSHOT_OUTPUT_DIR || 'docs/screenshots';
 
 async function requireRealStack() {
   if (!baseURL) throw new Error('SCREENSHOT_BASE_URL must identify an already-running, seeded real service stack.');
@@ -14,7 +15,10 @@ async function requireRealStack() {
 const executionEvidence: unknown[] = [];
 async function capture(page: Page, path: string) {
   if (await page.locator('#search-diagnostics').count()) {
-    const diagnostic = JSON.parse(await page.locator('#search-diagnostics pre').first().innerText());
+    await page.waitForFunction(() => {
+      try { return Boolean(JSON.parse(document.querySelector('#search-diagnostics pre')?.textContent || '{}').debug?.execution); } catch { return false; }
+    });
+    const diagnostic = JSON.parse((await page.locator('#search-diagnostics pre').first().textContent())!);
     const {provider,mode,q} = diagnostic.request;
     const external = ['meilisearch','typesense'].includes(provider);
     const expected = !q || mode === 'keyword' ? external ? 'external-keyword' : provider === 'pg_search' ? 'postgres-bm25' : 'postgres-fts' : external ? `external-${mode}` : mode === 'semantic' ? 'postgres-vector' : 'postgres-hybrid';
@@ -25,6 +29,7 @@ async function capture(page: Page, path: string) {
   if (await page.locator('#result-map').count()) await waitForMapTiles(page);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path, fullPage: false });
+  await writeFile(`${outputDir}/native-execution-evidence.json`, JSON.stringify(executionEvidence, null, 2));
   console.log(`captured ${path}`);
 }
 
@@ -40,6 +45,7 @@ async function recordLayout(page: Page) {
       warnings:[...document.querySelectorAll('.execution-warning')].map((element)=>element.textContent),
       horizontalOverflow:document.documentElement.scrollWidth>innerWidth};
   }));
+  await writeFile(`${outputDir}/native-layout-evidence.json`, JSON.stringify(layoutEvidence, null, 2));
 }
 
 async function goto(page: Page, path: string) {
@@ -87,6 +93,7 @@ async function waitForMapTiles(page: Page) {
 
 async function main() {
   await requireRealStack();
+  await mkdir(outputDir, {recursive:true});
   const browser = await chromium.launch({ headless: process.env.SCREENSHOT_HEADED !== '1', executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   try {
   const page = await browser.newPage({ baseURL, viewport: { width: 1366, height: 900 } });
@@ -94,14 +101,25 @@ async function main() {
   page.on('requestfailed', (request) => console.error('REQUEST FAILED', request.url(), request.failure()?.errorText));
   page.on('response', (response) => { if (response.url().includes('tile.openstreetmap.org') && !response.ok()) console.error('TILE HTTP',response.status(),response.url()); });
 
+  await goto(page, '/search?provider=postgres_native&mode=keyword&q=garage');
+  await waitForSearchReady(page);
+  await capture(page, `${outputDir}/compact-desktop-search.png`);
+  await recordLayout(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await goto(page, '/search?mode=keyword&q=garage');
+  await waitForSearchReady(page);
+  await capture(page, `${outputDir}/mobile-search.png`);
+  await recordLayout(page);
+  await page.setViewportSize({ width: 1366, height: 900 });
+
   await goto(page, '/search?mode=keyword&q=hampton%20cove%20garage');
   await waitForSearchReady(page);
   await page.locator('.facet-group[data-facet="saved-searches"] input').first().waitFor();
-  await capture(page, 'docs/screenshots/search-results.png');
+  await capture(page, `${outputDir}/search-results.png`);
 
   await page.locator('.result[data-house-id="target-hampton-cove-garage"]').click();
   await page.getByRole('dialog', { name: /Hampton Cove garage home/i }).waitFor();
-  await capture(page, 'docs/screenshots/hit-details.png');
+  await capture(page, `${outputDir}/hit-details.png`);
   await page.keyboard.press('Escape');
   await page.getByRole('dialog', { name: /Hampton Cove garage home/i }).waitFor({ state: 'hidden' });
 
@@ -118,7 +136,7 @@ async function main() {
   const inputBox = await page.getByRole('textbox', { name: 'Search' }).boundingBox();
   const suggestionBox = await page.locator('#search-suggestions').boundingBox();
   if (!inputBox || inputBox.y < 0 || !suggestionBox || suggestionBox.y < inputBox.y || suggestionBox.y + suggestionBox.height > 900) throw new Error('Suggestions screenshot must include the input and suggestion menu in the viewport');
-  await capture(page, 'docs/screenshots/search-suggestions.png');
+  await capture(page, `${outputDir}/search-suggestions.png`);
 
   await goto(page, '/search?mode=keyword');
   await waitForSearchReady(page);
@@ -126,7 +144,7 @@ async function main() {
   await saved.locator('input').check();
   await page.getByRole('button', { name: /saved: Waterfront home near Huntsville/i }).waitFor();
   await waitForSearchReady(page);
-  await capture(page, 'docs/screenshots/saved-search-scope.png');
+  await capture(page, `${outputDir}/saved-search-scope.png`);
 
   for (const {provider,mode,q} of [
     {provider:'postgres_native',mode:'semantic',q:'effortless upkeep condominium beside eateries'},
@@ -136,32 +154,21 @@ async function main() {
   ]) {
     await goto(page, `/search?${new URLSearchParams({provider,mode,q})}`);
     await waitForSearchReady(page);
-    await capture(page, `docs/screenshots/native-${provider}.png`);
+    await capture(page, `${outputDir}/native-${provider}.png`);
   }
 
   await goto(page, '/providers');
   await page.getByRole('heading', { name: 'Provider Comparison' }).waitFor();
-  await capture(page, 'docs/screenshots/provider-comparison.png');
+  await capture(page, `${outputDir}/provider-comparison.png`);
 
   await goto(page, '/system');
   await page.getByRole('heading', { name: 'External indexes' }).waitFor();
-  await capture(page, 'docs/screenshots/system-status.png');
+  await capture(page, `${outputDir}/system-status.png`);
   await page.locator('#embedding-pipeline').getByText('Durable PostgreSQL queue', {exact:true}).waitFor();
-  await page.locator('#embedding-pipeline').screenshot({path:'docs/screenshots/embedding-pipeline.png'});
+  await page.locator('#embedding-pipeline').screenshot({path:`${outputDir}/embedding-pipeline.png`});
   await goto(page, '/schema');
   await page.locator('#schema-count').waitFor();
-  await capture(page, 'docs/screenshots/schema-explorer.png');
-  await goto(page, '/search?provider=postgres_native&mode=keyword&q=garage');
-  await waitForSearchReady(page);
-  await capture(page, 'docs/screenshots/compact-desktop-search.png');
-  await recordLayout(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await goto(page, '/search?mode=keyword&q=garage');
-  await waitForSearchReady(page);
-  await capture(page, 'docs/screenshots/mobile-search.png');
-  await recordLayout(page);
-  await writeFile('docs/screenshots/native-layout-evidence.json', JSON.stringify(layoutEvidence, null, 2));
-  await writeFile('docs/screenshots/native-execution-evidence.json', JSON.stringify(executionEvidence, null, 2));
+  await capture(page, `${outputDir}/schema-explorer.png`);
 
   } finally { await browser.close(); }
 }

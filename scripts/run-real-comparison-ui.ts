@@ -51,5 +51,6 @@ try {
   if(process.env.REAL_UI_CAPTURE!=='0') await command(['--import','tsx','scripts/capture-screenshots.ts']);
 } finally {
   if(child&&child.exitCode===null){const stopped=once(child,'exit');child.kill('SIGTERM');const timer=setTimeout(()=>child?.kill('SIGKILL'),15_000);await stopped;clearTimeout(timer);}
+  await mkdir('test-results/native',{recursive:true});
   await writeFile('test-results/native/ui-api.log',logs);
 }
