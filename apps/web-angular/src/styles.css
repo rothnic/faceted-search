@@ -137,3 +137,61 @@ label,.label { font-size:10px; color:var(--muted); font-weight:650; text-transfo
 h1,.page-heading h1 { font-size:clamp(26px,4vw,36px); margin:8px 0; }
 h2 { font-size:20px; font-weight:650; margin:0 0 12px; }
 h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
+
+/* Keep the search workspace above the fold; controls share one compact band. */
+.topbar { height:60px; min-height:60px; }
+.app-shell { margin-top:18px; }
+.toolbar { display:grid; grid-template-columns:auto minmax(200px,1fr) 116px 190px 140px; gap:14px; align-items:end; padding:14px 16px; margin-bottom:8px; }
+.toolbar-heading { align-self:center; }
+.toolbar-heading h1 { margin:0; font-size:19px; white-space:nowrap; letter-spacing:-.5px; }
+.toolbar-heading .demo-label { height:18px; font-size:9px; margin-top:3px; }
+.search-options { display:contents; }
+.toolbar .field { min-width:0; width:auto; margin:0; gap:4px; }
+.toolbar .search-field > label { position:static; width:auto; height:auto; clip:auto; }
+.toolbar .input,.toolbar .select { min-height:40px; height:40px; }
+#search-box { min-height:40px; height:40px; font-size:14px; padding-left:37px; }
+.search-input-wrap > svg { width:18px; height:18px; left:11px; top:11px; }
+.system-strip { margin-bottom:12px; }
+.layout { gap:20px; }
+#search-filters .panel { top:76px; max-height:calc(100vh - 90px); padding:14px; }
+.filter-heading { flex-direction:row; align-items:center; justify-content:space-between; gap:6px; }
+.filter-heading h2 { font-size:13px; }
+#search-filters hr { margin:10px 0; }
+.facet-group { padding:12px 0; }
+.map-column { top:76px; }
+.result { padding:14px; }
+@media (max-width:1120px) {
+ .toolbar { grid-template-columns:minmax(180px,1fr) 116px 170px 130px; gap:10px; }
+ .toolbar-heading { grid-column:1/-1; display:flex; align-items:center; gap:10px; }
+ .toolbar-heading .demo-label { margin:0; }
+}
+@media (max-width:760px) {
+ .topbar { height:auto; min-height:0; padding:8px 14px; gap:5px; }
+ .brand { font-size:17px; }.brand-mark { width:25px; height:25px; font-size:22px; }
+ nav a { padding:6px 8px; min-height:32px; }
+ .app-shell { margin-top:10px; }
+ .toolbar { grid-template-columns:minmax(0,1fr) 120px; gap:8px 10px; padding:10px; }
+ .toolbar-heading { grid-column:1/-1; }.toolbar-heading h1 { font-size:17px; }
+ .toolbar .search-options > .field:first-child { width:auto; }
+ .toolbar .input,.toolbar .select,#search-box { height:44px; min-height:44px; font-size:12px; }
+ .search-input-wrap > svg { top:13px; }
+ .system-strip { margin-bottom:8px; gap:4px 10px; }
+ .mobile-filter-toggle { min-height:44px; margin-bottom:8px; }
+ .results-head { margin-bottom:8px; }.results-head h2 { font-size:19px; }
+ .result { padding:14px; }
+}
+.result-tools { display:flex; align-items:center; gap:6px; }
+.result-context { display:flex; flex-wrap:wrap; align-items:start; justify-content:space-between; gap:6px 10px; margin-bottom:8px; }
+.result-context .refinements,.result-context .ranking-note { margin:0; }
+.result-context .ranking-note { padding-top:4px; }
+.execution-warning { margin-bottom:8px; }
+@media (max-width:760px) {
+ .results-head { align-items:start; flex-wrap:nowrap; gap:6px; }
+ .results-head h2 { font-size:16px; }
+ .results-head .stats { font-size:9px; }
+ .result-tools .btn { height:44px; min-height:44px; padding:0 10px; font-size:11px; margin:0; }
+ .result-context { gap:4px 8px; }
+}
+.close-filter-panel { display:none; }
+@media (max-width:760px) { .close-filter-panel { display:inline-flex; min-height:44px; margin-top:8px; } }
+.suggestion-source { margin:3px 8px 6px; color:var(--muted); font-size:10px; line-height:1.5; }

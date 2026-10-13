@@ -13,7 +13,8 @@ test('declared schema matches the single initialization source, including relati
   expect(schema.liveIntrospection).toBe(false);
   expect(schema.source).toBe('application-ddl');
   expect(schema.tables).toEqual(describeSchema('memory').tables);
-  expect(schema.tables).toHaveLength(8);
+  expect(schema.tables).toHaveLength(describeSchema('memory').tables.length);
+  expect(schema.tables.some((table: {name: string}) => table.name === 'house_embeddings')).toBe(true);
   for (const table of schema.tables) expect(DATABASE_SCHEMA_SQL).toContain(table.ddl);
   const houses = schema.tables.find((table: {name: string}) => table.name === 'houses');
   expect(houses.columns.find((column: {name: string}) => column.name === 'city_id').reference).toBe('cities.id');
@@ -26,9 +27,9 @@ test('schema explorer searches fields and supports keyboard disclosure, empty st
   await page.goto('/schema');
   await expect(page.getByRole('heading', { name: 'Schema explorer' })).toBeVisible();
   await expect(page.getByText('Application DDL · not live introspection')).toBeVisible();
-  await expect(page.locator('#schema-count')).toHaveText('8 of 8 declared tables');
+  await expect(page.locator('#schema-count')).toHaveText(`${describeSchema('memory').tables.length} of ${describeSchema('memory').tables.length} declared tables`);
   await page.getByLabel('Find a table or field').fill('city_id');
-  await expect(page.locator('#schema-count')).toHaveText('2 of 8 declared tables');
+  await expect(page.locator('#schema-count')).toHaveText(`2 of ${describeSchema('memory').tables.length} declared tables`);
   await expect(page.getByText('→ cities.id').first()).toBeVisible();
   await page.getByLabel('Find a table or field').fill('not-a-field');
   await expect(page.getByText('No declared table or field matches. Try a shorter name.')).toBeVisible();
@@ -46,7 +47,7 @@ test('system status distinguishes simulated recorded state from model readiness 
   await expect(page.getByRole('heading', { name: 'In-memory demo' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Computing embeddings' })).toBeVisible();
   await expect(page.getByText(/counters do not indicate documents in a real search engine/)).toBeVisible();
-  await expect(page.getByText(/No continuous worker or durable running-job telemetry/)).toBeVisible();
+  await expect(page.getByText(/This demo has no durable worker/)).toBeVisible();
   await expect(page.getByText(/not a backfill completion percentage/)).toBeVisible();
   await expect(page.getByRole('progressbar')).toHaveCount(0);
 });
@@ -94,7 +95,7 @@ test('semantic error is escaped, preserves query, and permits keyword recovery',
   await expect(page.getByRole('textbox', { name: 'Search', exact: true })).toHaveValue('garage');
   await page.getByRole('button', { name: 'Use keyword search' }).click();
   await expect(page.locator('#result-list-scroll')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'keyword', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Mode', { exact: true })).toHaveValue('keyword');
 });
 
 test('a late search response cannot replace a newer result', async ({ page }) => {
@@ -233,6 +234,7 @@ test('suggestions retain a visible search input and desktop diagnostics start co
   const input = page.getByRole('textbox', {name:'Search'});
   await input.fill('gar');
   await expect(page.getByRole('button', {name:/garage\s+Amenity/i})).toBeVisible();
+  await expect(page.locator('.suggestion-source')).toHaveText('Catalog, saved searches and current listings');
   const boxes = await page.evaluate(() => ['#search-box','#search-suggestions'].map((selector) => {
     const r = document.querySelector(selector)!.getBoundingClientRect();
     return {top:r.top,bottom:r.bottom};
@@ -250,7 +252,7 @@ test('small muted text meets WCAG AA contrast against its rendered background', 
       const channels = color.match(/[\d.]+/g)!.slice(0,3).map(Number).map((n) => n / 255).map((n) => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4);
       return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
     };
-    return [['.search-heading p','body'], ['.count','#search-filters .panel'], ['.result-description','.result'], ['.hit-chip','.hit-chip']].map(([text,background]) => {
+    return [['.system-strip','body'], ['.count','#search-filters .panel'], ['.result-description','.result'], ['.hit-chip','.hit-chip']].map(([text,background]) => {
       const fg = luminance(getComputedStyle(document.querySelector(text)!).color);
       const bg = luminance(getComputedStyle(document.querySelector(background)!).backgroundColor);
       return {selector:text,ratio:(Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05)};

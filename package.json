@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "api:dev": "node --import tsx apps/api/src/main.ts",
-    "dev": "npm run web:build && npm run api:dev",
+    "dev": "npm run stack:full",
     "web:build": "vite build",
     "web:dev": "vite --host 127.0.0.1",
     "test": "playwright test",
@@ -15,10 +15,17 @@
     "search:sync-worker": "node --import tsx scripts/search-sync-worker.ts",
     "search:reset": "node --import tsx scripts/reset-search-indexes.ts",
     "verify:full-stack": "node --import tsx scripts/verify-full-stack.ts",
-    "stack:full": "npm run web:build && docker compose -f compose/docker-compose.full.yml up --build",
-    "stack:full:detached": "npm run web:build && docker compose -f compose/docker-compose.full.yml up -d --build",
+    "stack:full": "npm run web:build && npm run native-models:prepare && docker compose -f compose/docker-compose.full.yml up --build",
+    "stack:full:detached": "npm run web:build && npm run native-models:prepare && docker compose -f compose/docker-compose.full.yml up -d --build",
     "stack:full:down": "docker compose -f compose/docker-compose.full.yml down",
-    "verify:embeddings": "node --import tsx scripts/verify-embeddings.ts"
+    "verify:embeddings": "node --import tsx scripts/verify-embeddings.ts",
+    "native-models:prepare": "node --import tsx scripts/prepare-native-models.ts",
+    "verify:embedding-queue": "node --import tsx scripts/verify-embedding-queue.ts",
+    "verify:native-embeddings": "node --import tsx scripts/verify-native-embeddings.ts",
+    "verify:appliance-readiness": "node --import tsx scripts/verify-appliance-readiness.ts",
+    "demo:memory": "npm run web:build && DEMO_MEMORY=1 npm run api:dev",
+    "verify:postgres-search": "node --import tsx scripts/verify-postgres-search.ts",
+    "verify:real-browser": "npm run web:build && node --import tsx scripts/run-real-comparison-ui.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "3.8.1",
@@ -39,5 +46,8 @@
     "daisyui": "5.7.50",
     "tailwindcss": "4.3.3",
     "vite": "^8.0.16"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

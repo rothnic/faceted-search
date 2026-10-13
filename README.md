@@ -13,7 +13,7 @@ The app is intentionally small enough to inspect end to end: a Node API/static s
 | PostgreSQL plus Meilisearch | External search index synchronized from Postgres | Facets, range filters, geo filtering/sorting, hybrid search shape, direct InstantSearch demo, backfill, and sync-worker controls |
 | PostgreSQL plus Typesense | External search collection synchronized from Postgres | Faceted collection schema, geopoint and vector-query shape, direct InstantSearch demo, backfill, and sync-worker controls |
 
-Semantic and hybrid queries use a real, pinned MiniLM model on the Node CPU for every provider selection. Keyword queries can use real Meilisearch/Typesense; unavailable external engines fall back to the local scorer with an explicit warning. SQL examples remain illustrative, and no external vector index is configured. See [CPU embeddings](docs/cpu-embeddings.md) for the model, offline setup, resource limits and measured latency.
+The in-memory demo uses a pinned MiniLM CPU model. In the connected stack, PostgreSQL automatically generates durable embeddings through PGMQ and scores them with real pgvector SQL; Meilisearch and Typesense generate document/query embeddings natively from the same base MiniLM model. No vectors are pushed into either appliance. See [automatic embeddings](docs/automatic-embeddings.md) for setup, model/runtime differences, queue safety and measured costs.
 
 ## Features
 
@@ -70,16 +70,18 @@ Semantic and hybrid queries use a real, pinned MiniLM model on the Node CPU for 
 
 ![Provider capability comparison page](docs/screenshots/provider-comparison.png)
 
-## Run Locally
+## Run the Real Comparison (Docker Compose)
 
 ```bash
 npm ci
 npm run dev
+# In a second terminal:
+npm run seed
 ```
 
-Open <http://127.0.0.1:5173/search>. The first semantic/hybrid search downloads a ~23 MB public model, then runs locally without API keys or inference charges. Weights are cached in `data/models`; blank/keyword searches do not need them.
+Open <http://127.0.0.1:5173/search>. The default demo runs real PostgreSQL FTS, ParadeDB BM25, pgvector, Meilisearch and Typesense. Pinned public models are downloaded once; no paid embedding API is used. Seeded records queue automatic embeddings/indexing, and System shows when they are ready.
 
-`npm run dev` builds the frontend with Vite and starts the API/static server. For API-only work after a frontend build already exists, use:
+`npm run dev` builds the frontend/models and starts the real Compose stack. For an API connected to an existing PostgreSQL/engine setup, configure `DATABASE_URL` and service variables, then use:
 
 ```bash
 npm run api:dev
@@ -96,11 +98,11 @@ npm run web:dev
 ```bash
 npm run stack:full:detached
 npm run seed
-npm run search:backfill -- --provider meilisearch
-npm run search:backfill -- --provider typesense
+# Embeddings and appliance indexes populate automatically in the background.
+curl http://127.0.0.1:5173/api/embedding-jobs
 ```
 
-The full stack runs Postgres, Meilisearch, Typesense, and the same web/API app at <http://127.0.0.1:5173/search>. With `DATABASE_URL` present, saved searches and sync outbox state are stored in Postgres, and backfill/sync commands write to the external search engines.
+The full stack runs Postgres, Meilisearch, Typesense, and the same web/API app at <http://127.0.0.1:5173/search>. With `DATABASE_URL` present, saved searches, source invalidations and PGMQ jobs are stored in Postgres. A bounded CPU worker creates pgvector embeddings; Meilisearch and Typesense generate their own embeddings from queued source documents. Semantic search reports pending status until its selected index is ready.
 
 Direct adapter routes are available at:
 
@@ -152,3 +154,9 @@ tests                     Playwright browser coverage
 docs                      Specification, implementation notes, and screenshots
 compose                   Docker Compose stacks for provider experiments
 ```
+
+### Durable and native embedding verification
+
+The full stack builds PostgreSQL 15.19 with ParadeDB pg_search 0.26.1, PGMQ 1.13.0 and pgvector 0.8.7, uses Meilisearch 1.11.3 and Typesense 28.0, and starts its bounded worker automatically. `npm run native-models:prepare` verifies pinned public model files. See [the automatic generation and native-engine guide](docs/automatic-embeddings.md) for actual integration tests and the PostgreSQL-only option.
+
+`npm run demo:memory` is an explicit internal fixture/mechanics mode, not the comparison demo. Real screenshots and browser acceptance use an owned disposable database and native service instances; connected errors never fall back to fixtures.

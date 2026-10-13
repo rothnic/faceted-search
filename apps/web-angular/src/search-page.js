@@ -46,7 +46,7 @@ function renderSearchSuggestions() {
   const input = document.querySelector('#search-box');
   const suggestions = searchSuggestions(input?.value || '');
   if (!suggestions.length) return '<div class="suggestion-empty">No suggestions</div>';
-  return suggestions.map((item) => `
+  return '<p class="suggestion-source">Catalog, saved searches and current listings</p>' + suggestions.map((item) => `
     <button type="button" class="btn btn-sm suggestion-option" data-search-suggestion="${escapeHtml(item.query)}">
       <span>${escapeHtml(item.query)}</span>
       <span>${escapeHtml(item.type)}</span>
@@ -243,10 +243,8 @@ function updateToolbarControls() {
   if (providerSelect) providerSelect.value = state.request.provider;
   const sortSelect = document.querySelector('#sort');
   if (sortSelect) sortSelect.value = state.request.sort;
-  document.querySelectorAll('[data-mode]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.mode === state.request.mode);
-    button.setAttribute('aria-pressed', String(button.dataset.mode === state.request.mode));
-  });
+  const modeSelect = document.querySelector('#search-mode');
+  if (modeSelect) modeSelect.value = state.request.mode;
 }
 
 function wireSearchToolbar() {
@@ -270,12 +268,11 @@ function wireSearchToolbar() {
     state.request.page = 1;
     runSearch();
   });
-  document.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
-    state.request.mode = button.dataset.mode;
+  document.querySelector('#search-mode')?.addEventListener('change', (event) => {
+    state.request.mode = event.target.value;
     state.request.page = 1;
-    updateToolbarControls();
     runSearch();
-  }));
+  });
 }
 
 function wireSearchContent() {
@@ -312,6 +309,13 @@ function wireSearchDelegates() {
       if (target.id === 'retry-search') return runSearch();
       if (target.id === 'retry-saved') return loadSavedSearches();
       if (target.id === 'keyword-recovery') { state.request.mode = 'keyword'; return runSearch(); }
+      if (target.id === 'close-filter-panel') {
+        document.querySelector('#search-filters').classList.remove('mobile-open');
+        const toggle = document.querySelector('#toggle-filters');
+        toggle?.setAttribute('aria-expanded', 'false');
+        toggle?.focus();
+        return;
+      }
       if (target.id === 'toggle-filters') {
         const visible = target.getAttribute('aria-expanded') !== 'true';
         target.setAttribute('aria-expanded', String(visible));
@@ -377,7 +381,6 @@ function renderSearchPage() {
     app.innerHTML = `
       ${renderToolbar()}
       <div id="system-summary">${renderSystemStrip()}</div>
-      <button id="toggle-filters" class="btn btn-sm mobile-filter-toggle" aria-controls="search-filters" aria-expanded="false">Show or hide filters</button>
       <div class="layout">
         <div id="search-filters"></div>
         <div id="search-results"></div>

@@ -23,8 +23,8 @@ import { toHouseSearchDocument } from '../../../packages/search-transform/src/ho
 import { cities, neighborhoods, redstoneArsenal } from '../../../packages/test-fixtures/src/cities.fixture.js';
 import { fixtureCatalog, houses as fixtureHouses } from '../../../packages/test-fixtures/src/houses.fixture.js';
 import { seedSavedSearches } from '../../../packages/test-fixtures/src/saved-searches.fixture.js';
-import { RealServices, realServiceConfigFromEnv } from './real-services.js';
-import { cosineSimilarity, embedTexts, embeddingStatus, EmbeddingUnavailableError, MIN_SEMANTIC_SIMILARITY } from './embeddings.js';
+import { RealServices, realServiceConfigFromEnv, validateHousePatch } from './real-services.js';
+import { cosineSimilarity, embedTexts, embeddingStatus, EmbeddingUnavailableError, EMBEDDING_MODEL, EMBEDDING_MODEL_KEY, EMBEDDING_SOURCE_FIELDS, MIN_SEMANTIC_SIMILARITY } from './embeddings.js';
 
 const port = Number(process.env.PORT ?? 5173);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -33,6 +33,9 @@ const webSourceDir = join(rootDir, 'apps/web-angular/src');
 const webDistDir = join(rootDir, 'apps/web-angular/dist');
 const dataDir = process.env.DEMO_DATA_DIR ?? join(rootDir, 'data');
 const savedSearchPath = join(dataDir, 'saved-searches.json');
+if (!process.env.DATABASE_URL && process.env.DEMO_MEMORY !== '1') {
+  throw new Error('Real comparison requires DATABASE_URL. Run npm run dev for the Compose stack. DEMO_MEMORY=1 is an explicit internal fixture mode.');
+}
 const realServices = process.env.DATABASE_URL ? new RealServices(realServiceConfigFromEnv()) : undefined;
 
 type ProviderMeta = {
@@ -64,15 +67,15 @@ const providers: ProviderMeta[] = [
       keywordSearch: true,
       faceting: 'manual SQL aggregation',
       rangeFacets: true,
-      geoRadius: 'PostGIS ST_DWithin',
+      geoRadius: 'PostgreSQL SQL haversine radius',
       geoSort: true,
-      semanticSearch: 'Real MiniLM CPU embeddings in Node; no pgvector index',
-      hybridSearch: '55% local keyword + 45% MiniLM cosine',
+      semanticSearch: 'PostgreSQL: automatic PGMQ CPU embeddings + pgvector SQL; memory demo: local CPU scan',
+      hybridSearch: 'Native SQL lexical rank + pgvector cosine',
       instantSearchDirectAdapter: false,
       requiresExternalSync: false,
       supportsSavedSearchEvaluation: true
     },
-    setupNotes: ['Enable PostGIS and pgvector', 'Create tsvector, GIN, vector, and geography indexes'],
+    setupNotes: ['Enable pgvector and PGMQ', 'Transactional tsvector projection with a GIN index; SQL facets and geo distance'],
     syncRequirements: 'No external sync. PostgreSQL is the source of truth and the search index host.',
     schemaRequirements: ['houses table', 'cities table', 'neighborhoods table', 'saved_searches table'],
     knownLimitations: ['Facet and hybrid ranking SQL must be maintained by the application']
@@ -84,18 +87,18 @@ const providers: ProviderMeta[] = [
       keywordSearch: true,
       faceting: true,
       rangeFacets: true,
-      geoRadius: 'PostGIS ST_DWithin',
+      geoRadius: 'PostgreSQL SQL haversine radius',
       geoSort: true,
-      semanticSearch: 'Real MiniLM CPU embeddings in Node; no pgvector index',
-      hybridSearch: '55% local keyword + 45% MiniLM cosine',
+      semanticSearch: 'PostgreSQL: automatic PGMQ CPU embeddings + pgvector SQL; memory demo: local CPU scan',
+      hybridSearch: 'Native SQL lexical rank + pgvector cosine',
       instantSearchDirectAdapter: false,
       requiresExternalSync: false,
       supportsSavedSearchEvaluation: true
     },
-    setupNotes: ['Use a Postgres image with the ParadeDB pg_search extension', 'Keep PostGIS and pgvector enabled for geo and semantic search'],
+    setupNotes: ['Pinned ParadeDB pg_search extension is installed and preloaded by Compose', 'PGMQ and pgvector support automatic vectors; SQL haversine handles geo'],
     syncRequirements: 'No external sync. Search indexes live inside Postgres.',
-    schemaRequirements: ['pg_search index over flattened fields', 'geography index', 'vector embedding column'],
-    knownLimitations: ['Requires extension-aware Postgres deployment and SQL adapter work']
+    schemaRequirements: ['Transactional flattened source projection with a native BM25 index', 'vector(384) embedding column'],
+    knownLimitations: ['Requires the pinned pg_search extension/preload; scores differ naturally from native FTS']
   },
   {
     id: 'meilisearch',
@@ -106,7 +109,7 @@ const providers: ProviderMeta[] = [
       rangeFacets: true,
       geoRadius: true,
       geoSort: true,
-      semanticSearch: 'Real MiniLM CPU embeddings in Node; Meilisearch remains keyword-only',
+      semanticSearch: 'Connected Meilisearch generates MiniLM document/query embeddings natively',
       hybridSearch: true,
       instantSearchDirectAdapter: true,
       requiresExternalSync: true,
@@ -126,7 +129,7 @@ const providers: ProviderMeta[] = [
       rangeFacets: true,
       geoRadius: true,
       geoSort: true,
-      semanticSearch: 'Real MiniLM CPU embeddings in Node; Typesense remains keyword-only',
+      semanticSearch: 'Connected Typesense 28 generates MiniLM document/query embeddings natively',
       hybridSearch: true,
       instantSearchDirectAdapter: true,
       requiresExternalSync: true,
@@ -147,10 +150,12 @@ let syncState = {
 };
 
 function cityFor(house: House): City {
+  if (realServices) return realServices.locationFor(house).city;
   return cities.find((city) => city.id === house.cityId)!;
 }
 
 function neighborhoodFor(house: House): Neighborhood | undefined {
+  if (realServices) return realServices.locationFor(house).neighborhood;
   return neighborhoods.find((neighborhood) => neighborhood.id === house.neighborhoodId);
 }
 
@@ -183,6 +188,8 @@ function valueMatches<T extends string | number>(actual: T | undefined, expected
 async function currentHouses(): Promise<House[]> {
   return realServices ? realServices.loadHouses() : houses;
 }
+
+const nativeDebug = new WeakMap<HouseSearchHit[], NonNullable<HouseSearchResponse['debug']>>();
 
 async function filterHouses(request: HouseSearchRequest, searchableHouses: House[], scopeIds?: Set<string>): Promise<HouseSearchHit[]> {
   const q = request.q?.trim();
@@ -293,7 +300,7 @@ function debugFor(provider: ProviderMeta, request: HouseSearchRequest, totalHits
     return {
       rawRequest: { requestedProvider: provider.id, collection: 'houses', q: request.q, mode: request.mode, filters: request.filters },
       rawResponse: { found: totalHits },
-      warnings: ['Exact cosine scan over local CPU embeddings; no database or external vector index is queried.']
+      warnings: [realServices ? 'Persisted document vectors are scored with the pgvector cosine operator in PostgreSQL. Only the query embedding runs in Node.' : 'Exact cosine scan over local CPU embeddings; no database or external vector index is queried.']
     };
   }
   if (provider.id === 'postgres_native') {
@@ -343,35 +350,13 @@ async function performSearch(request: HouseSearchRequest): Promise<HouseSearchRe
   const provider = providerMeta(request.provider);
   const searchableHouses = await currentHouses();
   const scopeIds = await savedSearchScopeIds(request.savedSearchIds, searchableHouses);
-  if (scopeIds || request.mode !== 'keyword') {
-    return localSearchResponse(request, provider, started, searchableHouses, scopeIds, [
-      ...(scopeIds ? ['Saved-search scopes are ORed together, then the active query and filters narrow that scoped result set.'] : []),
-      ...(request.mode !== 'keyword' && ['meilisearch', 'typesense'].includes(provider.id)
-        ? ['Semantic/hybrid search runs in the Node API over source listings; the external engine is not used or configured for vectors.'] : [])
-    ]);
+  if (realServices) {
+    const result = await realServices.search(request, scopeIds ? [...scopeIds] : undefined);
+    return { provider: provider.id, providerLabel: provider.label, ...result,
+      mapHits: toMapHits(result.mapHits), page: request.page, pageSize: request.pageSize,
+      processingTimeMs: Number((performance.now()-started).toFixed(1)) };
   }
-  if (realServices && (request.provider === 'meilisearch' || request.provider === 'typesense')) {
-    try {
-      const external = await realServices.searchExternal(request.provider, request, cities, neighborhoods);
-      return {
-        provider: provider.id,
-        providerLabel: provider.label,
-        hits: external.hits,
-        mapHits: toMapHits(sortedHits(await filterHouses(request, searchableHouses), request)),
-        totalHits: external.totalHits,
-        page: Math.max(1, request.page || 1),
-        pageSize: Math.max(1, Math.min(50, request.pageSize || 12)),
-        facets: request.includeFacets ? external.facets : {},
-        processingTimeMs: Number((performance.now() - started).toFixed(1)),
-        debug: { ...external.debug, execution: 'external-keyword' }
-      };
-    } catch (error) {
-      return localSearchResponse(request, provider, started, searchableHouses, undefined, [
-        `${provider.label} engine was unavailable, so this response fell back to local keyword scoring: ${error instanceof Error ? error.message : String(error)}`
-      ]);
-    }
-  }
-  return localSearchResponse(request, provider, started, searchableHouses);
+  return localSearchResponse(request, provider, started, searchableHouses, scopeIds, ['Explicit in-memory fixture mode; this is not a real-provider comparison.']);
 }
 
 async function savedSearchScopeIds(ids: string[] | undefined, searchableHouses: House[]): Promise<Set<string> | undefined> {
@@ -379,7 +364,7 @@ async function savedSearchScopeIds(ids: string[] | undefined, searchableHouses: 
   if (!uniqueIds.length) return undefined;
 
   const searches = (await savedSearches()).filter((search) => uniqueIds.includes(search.id));
-  if (!searches.length) return undefined;
+  if (!searches.length) return new Set<string>();
   const scopedIds = new Set<string>();
   for (const search of searches) {
     for (const hit of await savedSearchMatches(search, searchableHouses)) scopedIds.add(hit.id);
@@ -387,12 +372,12 @@ async function savedSearchScopeIds(ids: string[] | undefined, searchableHouses: 
   return scopedIds;
 }
 
-function savedSearchMatches(search: SavedHouseSearch, searchableHouses: House[]) {
+async function savedSearchMatches(search: SavedHouseSearch, searchableHouses: House[]) {
   const criteria = defaultRequest({ ...search.criteria, savedSearchIds: [] });
-  return filterHouses(criteria, searchableHouses);
+  return realServices ? (await realServices.search(criteria)).mapHits : filterHouses(criteria, searchableHouses);
 }
 
-function toMapHits(hits: HouseSearchHit[]): HouseSearchMapHit[] {
+function toMapHits(hits: HouseSearchMapHit[]): HouseSearchMapHit[] {
   return hits.map((hit) => ({
     id: hit.id,
     title: hit.title,
@@ -419,7 +404,8 @@ async function localSearchResponse(
   const page = Math.max(1, request.page || 1);
   const pageSize = Math.max(1, Math.min(50, request.pageSize || 12));
   const hits = sorted.slice((page - 1) * pageSize, page * pageSize);
-  const debug = debugFor(provider, request, allMatches.length);
+  const engineDebug = nativeDebug.get(allMatches);
+  const debug = engineDebug ?? debugFor(provider, request, allMatches.length);
   return {
     provider: provider.id,
     providerLabel: provider.label,
@@ -432,8 +418,9 @@ async function localSearchResponse(
     processingTimeMs: Number((performance.now() - started).toFixed(1)),
     debug: {
       ...debug,
-      execution: request.mode !== 'keyword' && request.q?.trim() ? 'local-cpu' : 'local-keyword',
-      embedding: request.mode !== 'keyword' && request.q?.trim() ? embeddingStatus() : undefined,
+      execution: engineDebug?.execution ?? (request.mode !== 'keyword' && request.q?.trim() ? realServices ? 'postgres-vector' : 'local-cpu' : 'local-keyword'),
+      embedding: !engineDebug && request.mode !== 'keyword' && request.q?.trim() ? embeddingStatus() : undefined,
+      ...(realServices && !engineDebug && request.mode !== 'keyword' && request.q?.trim() ? { sql: 'SELECT house_id, 1 - (embedding <=> $1::vector) AS similarity FROM house_embeddings WHERE house_id = ANY($2) AND model_key = $3' } : {}),
       warnings: [...(debug.warnings ?? []), ...warnings]
     }
   };
@@ -497,7 +484,7 @@ function seededSavedSearches(): SavedHouseSearch[] {
 
 async function evaluateSavedSearch(search: SavedHouseSearch) {
   const response = await performSearch({ ...search.criteria, page: 1, pageSize: 50, includeFacets: true });
-  const hitIds = (response.debug?.execution === 'external-keyword' ? response.hits : response.mapHits).map((hit) => hit.id);
+  const hitIds = response.mapHits.map((hit) => hit.id);
   const newMatches = hitIds.filter((id) => !search.seenHouseIds.includes(id));
   return {
     ...search,
@@ -589,16 +576,32 @@ function defaultRequest(body: Partial<HouseSearchRequest>): HouseSearchRequest {
   if (body.mode !== undefined && !['keyword', 'semantic', 'hybrid'].includes(body.mode)) {
     throw Object.assign(new Error('Search mode must be keyword, semantic, or hybrid.'), { statusCode: 400 });
   }
+  const invalid = (message: string): never => { throw Object.assign(new Error(message), { statusCode: 400 }); };
+  if (body.provider !== undefined && !providers.some((provider) => provider.id === body.provider)) invalid('Unknown search provider.');
+  if (body.sort !== undefined && !['relevance','distance','price_asc','price_desc','newest'].includes(body.sort)) invalid('Unknown sort order.');
+  const filters = body.filters ?? {};
+  if (typeof filters !== 'object' || Array.isArray(filters)) invalid('Search filters must be an object.');
+  const strings = ['city','neighborhood','schoolDistrict','propertyType','listingStatus','amenities'];
+  const numbers = ['minPrice','maxPrice','minBedrooms','minBathrooms','minSquareFeet','minYearBuilt','maxYearBuilt','minLotSize','maxLotSize'];
+  for (const [field,value] of Object.entries(filters)) {
+    if (strings.includes(field)) { if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.length > 500)) invalid(`Invalid ${field} filter.`); }
+    else if (field === 'bedrooms') { if (!Array.isArray(value) || value.some((item) => typeof item !== 'number' || !Number.isInteger(item) || item < 0)) invalid('Invalid bedrooms filter.'); }
+    else if (numbers.includes(field)) { if (typeof value !== 'number' || !Number.isFinite(value)) invalid(`Invalid ${field} filter.`); }
+    else invalid(`Unknown filter ${field}.`);
+  }
+  if (body.geo && (![body.geo.lat,body.geo.lng,body.geo.radiusMiles].every(Number.isFinite) || Math.abs(body.geo.lat)>90 || Math.abs(body.geo.lng)>180 || body.geo.radiusMiles<0)) invalid('Invalid geographic radius.');
+  if (body.viewport && !Object.values(body.viewport).every(Number.isFinite)) invalid('Invalid map viewport.');
+  if (body.savedSearchIds && (!Array.isArray(body.savedSearchIds) || body.savedSearchIds.some((id)=>typeof id !== 'string'))) invalid('Invalid saved-search scope.');
   return {
     provider: body.provider ?? 'postgres_native',
     q: body.q ?? '',
     mode: body.mode ?? 'hybrid',
-    filters: body.filters ?? {},
+    filters,
     geo: body.geo,
     viewport: body.viewport,
     sort: body.sort ?? 'relevance',
-    page: body.page ?? 1,
-    pageSize: body.pageSize ?? 12,
+    page: Number.isFinite(body.page) ? Math.max(1, Math.floor(body.page!)) : 1,
+    pageSize: Number.isFinite(body.pageSize) ? Math.max(1, Math.min(50, Math.floor(body.pageSize!))) : 12,
     includeFacets: body.includeFacets ?? true,
     savedSearchIds: body.savedSearchIds ?? []
   };
@@ -627,12 +630,25 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   if (req.method === 'OPTIONS') return send(res, 204, {});
 
   if (req.method === 'GET' && pathname === '/api/providers') {
-    return send(res, 200, { providers, fixtureCatalog, storageMode: realServices ? 'postgres' : 'memory', observedAt: new Date().toISOString(), geoPresets: { huntsville: cities[0], madison: cities[1], redstoneArsenal } });
+    return send(res, 200, { providers, fixtureCatalog: realServices ? await realServices.catalog() : fixtureCatalog, catalogSource: realServices ? 'postgres' : 'fixture', storageMode: realServices ? 'postgres' : 'memory', observedAt: new Date().toISOString(), geoPresets: { huntsville: cities[0], madison: cities[1], redstoneArsenal } });
   }
 
   if (req.method === 'GET' && pathname === '/api/schema') return send(res, 200, describeSchema(realServices ? 'postgres' : 'memory'));
 
   if (req.method === 'GET' && pathname === '/api/embeddings') return send(res, 200, embeddingStatus());
+
+  if (req.method === 'GET' && pathname === '/api/embedding-jobs') {
+    return send(res, 200, realServices ? await realServices.embeddingJobs.status() : {
+      storageMode: 'memory', durable: false, enabled: false, observedAt: new Date().toISOString(),
+      model: { ...EMBEDDING_MODEL, key: EMBEDDING_MODEL_KEY }, sourceFields: EMBEDDING_SOURCE_FIELDS,
+      queue: null, documents: null, recentFailures: [],
+      note: 'In-memory demo uses on-demand CPU embeddings. Set DATABASE_URL to use durable PGMQ generation and pgvector storage.'
+    });
+  }
+  if (req.method === 'POST' && pathname === '/api/embedding-jobs/backfill') {
+    if (!realServices) return send(res, 400, { error: 'Durable embedding backfill requires PostgreSQL.' });
+    return send(res, 202, await realServices.embeddingJobs.backfill());
+  }
 
   if (req.method === 'POST' && pathname === '/api/search') {
     const body = await readJson(req);
@@ -656,7 +672,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       currentHitCount: response.totalHits,
       lastEvaluatedAt: now,
       newMatchesSinceLastEvaluation: response.totalHits,
-      seenHouseIds: (response.debug?.execution === 'external-keyword' ? response.hits : response.mapHits).map((hit) => hit.id),
+      seenHouseIds: response.mapHits.map((hit) => hit.id),
       createdAt: now,
       updatedAt: now
     };
@@ -679,7 +695,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   if (req.method === 'POST' && pathname === '/api/sync/backfill') {
     const body = await readJson(req);
     if (body.provider !== 'meilisearch' && body.provider !== 'typesense') return send(res, 400, { error: 'provider must be meilisearch or typesense' });
-    return send(res, 200, await backfill(body.provider));
+    return send(res, realServices ? 202 : 200, await backfill(body.provider));
   }
 
   if (req.method === 'POST' && pathname === '/api/sync/worker/run') return send(res, 200, await runSyncWorker());
@@ -702,6 +718,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   const houseMatch = pathname.match(/^\/api\/houses\/([^/]+)$/);
   if (req.method === 'PATCH' && houseMatch) {
     const body = await readJson(req);
+    validateHousePatch(body);
     if (realServices) {
       const updated = await realServices.updateHouse(houseMatch[1], body);
       if (!updated) return send(res, 404, { error: 'House not found' });
@@ -716,6 +733,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
 
   return send(res, 404, { error: 'Unknown API route' });
 }
+
+if (realServices) await realServices.start();
 
 const server = createServer(async (req, res) => {
   try {
@@ -732,3 +751,14 @@ const server = createServer(async (req, res) => {
   console.log(`Search options demo running at http://${host}:${boundPort}/search`);
   process.send?.({ type: 'ready', port: boundPort });
 });
+
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  server.close();
+  await realServices?.close();
+  server.closeAllConnections();
+}
+process.once('SIGTERM', () => { void shutdown(); });
+process.once('SIGINT', () => { void shutdown(); });

@@ -2,11 +2,16 @@ name: search-options-demo
 
 services:
   postgres:
-    image: artifactory.dev.nou-systems.com/nsi-containers-docker/library/postgres:15
+    build:
+      context: ..
+      dockerfile: compose/Dockerfile.postgres
     environment:
       POSTGRES_USER: demo
       POSTGRES_PASSWORD: demo
       POSTGRES_DB: search_demo
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    command: ["postgres", "-c", "shared_preload_libraries=pg_search"]
     ports:
       - "5432:5432"
     healthcheck:
@@ -16,10 +21,17 @@ services:
       retries: 20
 
   meilisearch:
-    image: artifactory.dev.nou-systems.com/nsi-containers-docker/getmeili/meilisearch:v1.11
+    image: getmeili/meilisearch:v1.11.3
     environment:
       MEILI_ENV: development
       MEILI_MASTER_KEY: dev_meili_master_key
+      HF_HOME: /models/huggingface
+      RAYON_NUM_THREADS: "1"
+      MEILI_MAX_INDEXING_THREADS: "1"
+      MEILI_MAX_INDEXING_MEMORY: 256MiB
+    volumes:
+      - ../data/native-models:/models:ro
+      - meili-data:/meili_data
     ports:
       - "7700:7700"
     healthcheck:
@@ -29,15 +41,16 @@ services:
       retries: 20
 
   typesense:
-    image: artifactory.dev.nou-systems.com/nsi-containers-docker/typesense/typesense:27.1
-    command: ["--data-dir", "/data", "--api-key", "dev_typesense_api_key", "--enable-cors"]
+    image: typesense/typesense:28.0
+    command: ["--data-dir", "/data", "--api-key", "dev_typesense_api_key", "--enable-cors", "--thread-pool-size", "2", "--num-collections-parallel-load", "1", "--num-documents-parallel-load", "1"]
     ports:
       - "8108:8108"
     volumes:
       - typesense-data:/data
+      - ../data/native-models/typesense/models:/data/models:ro
 
   app:
-    image: artifactory.dev.nou-systems.com/nsi-containers-docker/library/node:22-bookworm-slim
+    image: node:22-bookworm-slim
     working_dir: /workspace
     command: ["sh", "-c", "npm ci && npm run api:dev"]
     environment:
@@ -45,6 +58,7 @@ services:
       PORT: "5173"
       HOST: 0.0.0.0
       DATABASE_URL: postgresql://demo:demo@postgres:5432/search_demo
+      SEARCH_SYNC_PROVIDERS: meilisearch,typesense
       MEILI_HOST: http://meilisearch:7700
       MEILI_MASTER_KEY: dev_meili_master_key
       TYPESENSE_HOST: http://typesense:8108
@@ -63,5 +77,7 @@ services:
         condition: service_started
 
 volumes:
+  postgres-data:
+  meili-data:
   typesense-data:
   app-node-modules:

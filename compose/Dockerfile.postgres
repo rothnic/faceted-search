@@ -1,0 +1,51 @@
+# PostgreSQL with native pgvector and PGMQ; no extra queue service.
+# Source commits/hashes verified against official HTTPS downloads on 2026-10-13.
+# Official postgres:15.19-bookworm multi-platform image digest from Docker Hub tag API.
+ARG POSTGRES_IMAGE=postgres:15.19-bookworm@sha256:d4a8e1f88f475ee3e0137fa89d21ebc59f6c6ab16bf369ee92907607cc3455ae
+FROM ${POSTGRES_IMAGE} AS extensions
+
+RUN set -eux; \
+    test "$PG_MAJOR" = 15; \
+    postgres --version | grep -E '^postgres \(PostgreSQL\) 15\.19([ (]|$)'; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl build-essential "postgresql-server-dev-${PG_MAJOR}=${PG_VERSION}"; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY compose/stage-pg-search.sh /tmp/stage-pg-search.sh
+ARG TARGETARCH
+RUN TARGETARCH="$TARGETARCH" sh /tmp/stage-pg-search.sh /opt/pg-search
+
+WORKDIR /tmp/extensions
+RUN set -eux; \
+    curl -fLsS --retry 2 \
+      https://codeload.github.com/pgvector/pgvector/tar.gz/f37c13f68b57d2c3472b2214fbcff699d6d34876 \
+      -o pgvector.tar.gz; \
+    echo '83d673c3b287cddbf3879f86215f043f2c2b56c69d37b2a77504910db1ed6e56  pgvector.tar.gz' | sha256sum -c -; \
+    tar -xzf pgvector.tar.gz; \
+    make -C pgvector-f37c13f68b57d2c3472b2214fbcff699d6d34876 -j2 \
+      PG_CONFIG=/usr/lib/postgresql/15/bin/pg_config OPTFLAGS='' with_llvm=no; \
+    make -C pgvector-f37c13f68b57d2c3472b2214fbcff699d6d34876 install \
+      PG_CONFIG=/usr/lib/postgresql/15/bin/pg_config OPTFLAGS='' with_llvm=no DESTDIR=/opt/extensions; \
+    curl -fLsS --retry 2 \
+      https://codeload.github.com/pgmq/pgmq/tar.gz/32c075bb6dbed66a303d1a792393c93e36c09a97 \
+      -o pgmq.tar.gz; \
+    echo '909fc6c2f6471e3015559d870f05c8fecab3a638986e9443f666d8e2324c897b  pgmq.tar.gz' | sha256sum -c -; \
+    tar -xzf pgmq.tar.gz; \
+    make -C pgmq-32c075bb6dbed66a303d1a792393c93e36c09a97/pgmq-extension -j2 \
+      PG_CONFIG=/usr/lib/postgresql/15/bin/pg_config with_llvm=no; \
+    make -C pgmq-32c075bb6dbed66a303d1a792393c93e36c09a97/pgmq-extension install \
+      PG_CONFIG=/usr/lib/postgresql/15/bin/pg_config with_llvm=no DESTDIR=/opt/extensions; \
+    grep -q "default_version = '0.8.7'" /opt/extensions/usr/share/postgresql/15/extension/vector.control; \
+    grep -q "default_version = '1.13.0'" /opt/extensions/usr/share/postgresql/15/extension/pgmq.control
+
+FROM ${POSTGRES_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends libopenblas0 && rm -rf /var/lib/apt/lists/*
+ENV OPENBLAS_NUM_THREADS=1
+COPY --from=extensions /opt/pg-search/usr/lib/postgresql/15/lib/ /usr/lib/postgresql/15/lib/
+COPY --from=extensions /opt/pg-search/usr/share/postgresql/15/extension/ /usr/share/postgresql/15/extension/
+COPY --from=extensions /opt/pg-search/usr/share/doc/postgresql-15-pg-search/ /usr/share/doc/postgresql-15-pg-search/
+COPY --from=extensions /opt/extensions/usr/lib/postgresql/15/lib/vector.so /usr/lib/postgresql/15/lib/vector.so
+COPY --from=extensions /opt/extensions/usr/share/postgresql/15/extension/ /usr/share/postgresql/15/extension/
+# Existing application schema/migrations enable CREATE EXTENSION vector and pgmq.
+# PGMQ uses ordinary logged SQL queues: no pg_partman, preload, daemon, or queue service.

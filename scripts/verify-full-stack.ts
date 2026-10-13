@@ -35,30 +35,36 @@ async function search(provider: 'meilisearch' | 'typesense') {
   });
 }
 
+async function waitForAutomaticWork() {
+  const deadline = Date.now() + 240_000;
+  while (Date.now() < deadline) {
+    const status = await getApi('/api/embedding-jobs');
+    assert(status.durable, 'Full-stack verification requires real PostgreSQL with PGMQ.');
+    if (!status.documents.pending && !status.documents.projectionPending && !status.queue.created && !status.queue.active && !status.queue.retry) return status;
+    if (status.recentFailures.length && status.queue.failed) throw new Error(JSON.stringify(status.recentFailures));
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error('Automatic embedding/native indexing did not complete.');
+}
+
+assert((await getApi('/api/providers')).storageMode === 'postgres', 'This verification requires the PostgreSQL full stack.');
 await postApi('/api/seed');
-await postApi('/api/sync/backfill', { provider: 'meilisearch' });
-await postApi('/api/sync/backfill', { provider: 'typesense' });
+await waitForAutomaticWork();
 
 const meili = await search('meilisearch');
 assert(meili.hits[0]?.id === 'target-hampton-cove-garage', 'Meilisearch did not rank the targeted Hampton Cove listing first.');
-assert(meili.debug?.rawResponse?.facetDistribution, 'Meilisearch raw response did not include facetDistribution.');
+assert(meili.debug?.rawResponse?.[0]?.facetDistribution, 'Meilisearch raw response did not include facetDistribution.');
 assert(!JSON.stringify(meili.debug?.warnings ?? []).includes('fell back'), 'Meilisearch query fell back instead of using the real engine.');
 
 const typesense = await search('typesense');
 assert(typesense.hits[0]?.id === 'target-hampton-cove-garage', 'Typesense did not rank the targeted Hampton Cove listing first.');
-assert(Array.isArray(typesense.debug?.rawResponse?.facet_counts), 'Typesense raw response did not include facet_counts.');
+assert(Array.isArray(typesense.debug?.rawResponse?.[0]?.facet_counts), 'Typesense raw response did not include facet_counts.');
 assert(!JSON.stringify(typesense.debug?.warnings ?? []).includes('fell back'), 'Typesense query fell back instead of using the real engine.');
 
 await patchApi('/api/houses/target-madison-starter', { price: 277000 });
-const pending = await getApi('/api/sync/status');
-assert(pending.outboxPendingCount === 2, `Expected 2 pending outbox events, got ${pending.outboxPendingCount}.`);
-
-const worker = await postApi('/api/sync/worker/run');
-assert(worker.processed === 2, `Expected sync worker to process 2 events, got ${worker.processed}.`);
-
+await waitForAutomaticWork();
 const complete = await getApi('/api/sync/status');
-assert(complete.outboxPendingCount === 0, `Expected no pending outbox events, got ${complete.outboxPendingCount}.`);
+assert(complete.outboxPendingCount === 0, `Expected no pending source changes, got ${complete.outboxPendingCount}.`);
 assert(!complete.providers.meilisearch.lastSyncError, `Meilisearch sync error: ${complete.providers.meilisearch.lastSyncError}`);
 assert(!complete.providers.typesense.lastSyncError, `Typesense sync error: ${complete.providers.typesense.lastSyncError}`);
-
-console.log('Full stack verification passed: Postgres, Meilisearch, Typesense, backfill, search, and sync worker are functional.');
+console.log('Full stack verification passed: PostgreSQL, automatic PGMQ embeddings, native engine backfill, search and automatic source sync.');

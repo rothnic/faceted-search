@@ -1,5 +1,7 @@
 # Local CPU embeddings
 
+> This page describes the in-memory/on-demand mode and original CPU-model proof. The connected PostgreSQL and appliance paths now use [automatic PGMQ/pgvector and native engine embeddings](automatic-embeddings.md); that document is authoritative for connected-mode behavior and current measurements.
+
 Semantic and hybrid searches now run a real, quantized sentence embedding model in the Node API. No GPU, Python service, API key, paid inference API, or vector database is needed. Listing/query text stays in the API process; the only model-related network traffic downloads public model files from Hugging Face.
 
 ## Model and runtime

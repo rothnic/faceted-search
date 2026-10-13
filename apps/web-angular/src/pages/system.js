@@ -1,3 +1,4 @@
+import { renderEmbeddingJobs } from './embedding-jobs.js';
 import { api, app, escapeHtml as e, label, setHtmlPreservingFocus, state } from '../core.js';
 import { embeddingLabel, modelProgress, refreshStatus, startStatusPolling, storageLabel } from '../system-status.js';
 
@@ -6,7 +7,6 @@ function renderSnapshot() {
   const sync = state.sync;
   const content = document.querySelector('#system-snapshot');
   if (!content) return;
-  const rawOpen = content.querySelector('details')?.open;
   setHtmlPreservingFocus(content, `
     <p class="stats">Last attempted ${state.statusCheckedAt ? e(new Date(state.statusCheckedAt).toLocaleTimeString()) : 'not yet'} · refreshes while this page is visible</p>
     <div class="status-grid">
@@ -14,16 +14,17 @@ function renderSnapshot() {
         <p>${state.storageMode === 'memory' ? 'Fixture listings and simulated index sync. Changes reset when the server restarts or the demo is seeded.' : state.storageMode === 'postgres' ? 'The API reports PostgreSQL-backed data and persisted sync state.' : 'Could not establish the current storage mode.'}</p>
         <a id="system-schema-link" href="/schema">Browse the declared schema →</a>
       </article>
-      <article class="panel"><span class="eyebrow">Semantic runtime</span><h2>${e(embeddingLabel(model))}</h2>
+      <article class="panel"><span class="eyebrow">Application CPU runtime</span><h2>${e(embeddingLabel(model))}</h2>
         ${model ? `<p>${e(model.model)} · ${e(model.dimensions)} dimensions · ${e(model.dtype)} · ${e(model.device)}</p>${modelProgress(model)}
           <dl class="status-facts"><dt>Active batches</dt><dd>${e(model.activeBatches ?? 'Unknown')}</dd><dt>Cached texts</dt><dd>${e(model.cachedTexts ?? 'Unknown')}</dd><dt>Computed texts</dt><dd>${e(model.computedTexts ?? 'Unknown')}</dd></dl>
           ${model.error ? `<p class="notice error" role="alert">${e(model.error)}</p>` : ''}` : `<p class="notice">Status unavailable: ${e(state.embeddingError || 'Waiting for API')}</p>`}
         <p class="stats">Ready means the model is loaded. Cache totals are not a backfill completion percentage. Relevance scores are not calibrated confidence probabilities.</p>
       </article>
     </div>
+    ${renderEmbeddingJobs()}
     <section class="panel status-section"><div class="section-heading"><div><span class="eyebrow">Recorded synchronization</span><h2>External indexes</h2></div><span class="status-badge">${sync ? `${e(sync.outboxPendingCount)} pending events` : 'Status unavailable'}</span></div>
       <p>${state.storageMode === 'memory' ? 'Demo simulation: these counters do not indicate documents in a real search engine.' : 'Recorded application counters, not a live engine health probe. Completion records do not verify current index freshness.'}</p>
-      <p class="stats">No continuous worker or durable running-job telemetry is exposed. Buttons run one request; progress is unknown until it returns.</p>
+      <p class="stats">${state.storageMode === 'memory' ? 'This demo has no durable worker. Sync buttons run one simulated request.' : 'Durable embedding work is reported separately above. These counters record application sync requests, not native engine embedding progress.'}</p>
       ${sync ? `<div class="status-grid">${Object.entries(sync.providers || {}).map(([name, provider]) => `<article class="status-card"><h3>${e(label(name))}</h3>
         <span class="status-badge">Backfill: ${e(label(provider.backfillStatus))}</span>
         <dl class="status-facts"><dt>Recorded indexed</dt><dd>${e(provider.documentsIndexed)}</dd><dt>Recorded deleted</dt><dd>${e(provider.documentsDeleted)}</dd><dt>Last sync</dt><dd>${provider.lastSyncTime ? e(new Date(provider.lastSyncTime).toLocaleString()) : 'Never recorded'}</dd></dl>
@@ -31,7 +32,7 @@ function renderSnapshot() {
         <button class="btn btn-sm btn-outline" id="system-backfill-${e(name)}" data-system-action="backfill" data-provider="${e(name)}" ${state.operation ? 'disabled' : ''}>${state.storageMode === 'memory' ? 'Simulate' : 'Run'} ${e(label(name))} backfill</button>
       </article>`).join('')}</div>` : `<p class="notice error" role="alert">${e(state.syncError || 'Waiting for sync status')}</p>`}
       <div class="action-row"><button class="btn btn-sm btn-outline" id="system-worker" data-system-action="worker" ${state.operation || !sync ? 'disabled' : ''}>${state.storageMode === 'memory' ? 'Simulate worker once' : 'Run worker once'}</button></div>
-      <details ${rawOpen ? 'open' : ''}><summary id="system-raw-summary">Raw observed sync response</summary><pre>${e(JSON.stringify(sync, null, 2))}</pre></details>
+      <details id="system-sync-raw"><summary id="system-raw-summary">Raw observed sync response</summary><pre>${e(JSON.stringify(sync, null, 2))}</pre></details>
     </section>`);
   document.querySelector('#operation-feedback').innerHTML = state.operation
     ? `<p class="notice" role="status">${e(state.operation)} is running in this browser request. No completion percentage is available.</p>`
@@ -48,14 +49,20 @@ export async function renderSystem() {
   app.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-system-action]');
     if (!button || state.operation) return;
+    const embeddingBackfill = button.dataset.systemAction === 'embedding-backfill';
     const backfill = button.dataset.systemAction === 'backfill';
-    state.operation = backfill ? `${label(button.dataset.provider)} backfill` : 'Sync worker';
+    state.operation = embeddingBackfill ? 'Embedding backfill admission' : backfill ? `${label(button.dataset.provider)} backfill` : 'Sync worker';
     state.operationError = null; state.operationResult = null; renderSnapshot();
     try {
-      await api(backfill ? '/api/sync/backfill' : '/api/sync/worker/run', { method: 'POST', body: JSON.stringify(backfill ? { provider: button.dataset.provider } : {}) });
-      state.operationResult = `${state.operation} request completed${state.storageMode === 'memory' ? ' (demo simulation)' : ''}.`;
+      const result = await api(embeddingBackfill ? '/api/embedding-jobs/backfill' : backfill ? '/api/sync/backfill' : '/api/sync/worker/run', { method: 'POST', body: JSON.stringify(backfill ? { provider: button.dataset.provider } : {}) });
+      state.operationResult = embeddingBackfill ? `Backfill request accepted: ${result.accepted} document records accepted for scheduling; ${result.invalidated} document records invalidated. Scheduling is not completed indexing. Refreshing observed counts.` : `${state.operation} request completed${state.storageMode === 'memory' ? ' (demo simulation)' : ''}.`;
     } catch (error) { state.operationError = error.message; }
-    finally { state.operation = null; await refreshStatus(); renderSnapshot(); }
+    finally {
+      state.operation = null; await refreshStatus();
+      const restoreActionFocus = document.activeElement === document.body;
+      renderSnapshot();
+      if (restoreActionFocus && button.id) document.getElementById(button.id)?.focus();
+    }
   });
   startStatusPolling(renderSnapshot);
 }

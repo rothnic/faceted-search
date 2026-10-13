@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import type { FeatureExtractionPipeline } from '@huggingface/transformers';
 
@@ -12,6 +13,11 @@ export const EMBEDDING_MODEL = {
   maxTokens: 256
 } as const;
 export const MIN_SEMANTIC_SIMILARITY = 0.35;
+export const EMBEDDING_SOURCE_FIELDS = ['title', 'description', 'city', 'neighborhood', 'schoolDistrict', 'propertyType', 'amenities', 'tags'];
+// Include preprocessing/pooling as well as weights: never mix incompatible vectors.
+export const EMBEDDING_MODEL_KEY = createHash('sha256').update(JSON.stringify({ ...EMBEDDING_MODEL, pooling: 'mean', normalize: true, textFormat: 2 })).digest('hex');
+export const normalizeEmbeddingText = (text: string) => text.trim().toLowerCase().replaceAll('_', ' ').slice(0, 8192);
+export const embeddingContentHash = (text: string) => createHash('sha256').update(normalizeEmbeddingText(text)).digest('hex');
 
 const cacheDir = resolve(process.env.EMBEDDING_CACHE_DIR ?? fileURLToPath(new URL('../../../data/models', import.meta.url)));
 const offline = process.env.EMBEDDING_OFFLINE === '1';
@@ -20,6 +26,8 @@ const BATCH_SIZE = 16;
 type CacheEntry = { promise: Promise<Float32Array>; ready: boolean };
 const vectors = new Map<string, CacheEntry>();
 let modelPromise: Promise<FeatureExtractionPipeline> | undefined;
+let inferenceTail: Promise<unknown> = Promise.resolve();
+let queuedBatches = 0;
 const status = {
   state: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
   error: undefined as string | undefined,
@@ -36,6 +44,7 @@ export function embeddingStatus() {
   return {
     ...EMBEDDING_MODEL,
     ...status,
+    queuedBatches,
     offline,
     cachedTexts: [...vectors.values()].filter((entry) => entry.ready).length,
     maxCachedTexts: MAX_CACHED_TEXTS,
@@ -90,7 +99,7 @@ function unavailable(error: unknown) {
   return new EmbeddingUnavailableError(status.error);
 }
 
-async function inferBatch(texts: string[]): Promise<Float32Array[]> {
+async function runBatch(texts: string[]): Promise<Float32Array[]> {
   status.activeBatches += 1;
   try {
     const model = await loadModel();
@@ -116,9 +125,18 @@ async function inferBatch(texts: string[]): Promise<Float32Array[]> {
   }
 }
 
+function inferBatch(texts: string[]): Promise<Float32Array[]> {
+  // Share one CPU lane between foreground queries and background document work.
+  if (queuedBatches >= 64) return Promise.reject(new EmbeddingUnavailableError('Local embedding CPU queue is busy. Retry shortly.'));
+  queuedBatches += 1;
+  const result = inferenceTail.then(() => runBatch(texts)).finally(() => { queuedBatches -= 1; });
+  inferenceTail = result.catch(() => undefined);
+  return result;
+}
+
 export async function embedTexts(texts: string[]): Promise<Float32Array[]> {
-  const normalized = texts.map((text) => text.trim().toLowerCase().replaceAll('_', ' ').slice(0, 8192));
-  const keyFor = (text: string) => `${EMBEDDING_MODEL.revision}:${text}`;
+  const normalized = texts.map(normalizeEmbeddingText);
+  const keyFor = (text: string) => `${EMBEDDING_MODEL_KEY}:${text}`;
   const missing = [...new Set(normalized)].filter((text) => !vectors.has(keyFor(text)));
   status.cacheHits += normalized.length - missing.length;
   let previous: Promise<unknown> = Promise.resolve();

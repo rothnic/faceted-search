@@ -24,6 +24,8 @@ const state = {
   sync: null,
   storageMode: null,
   embeddings: null,
+  embeddingJobs: null,
+  embeddingJobsError: null,
   isSearching: false,
   searchError: null,
   savedSearchesLoading: true,

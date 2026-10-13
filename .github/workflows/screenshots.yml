@@ -1,4 +1,4 @@
-name: Screenshots
+name: Internal UI mechanics (fixture mode)
 
 on:
   push:
@@ -21,16 +21,11 @@ jobs:
 
       - run: npm ci
       - run: npm run typecheck
-      # Exercise real inference and warm the pinned model cache before browser capture.
+      # Explicit internal fixture tests; real comparison screenshots live in native-embeddings.yml.
       - run: npm run verify:embeddings
       - run: npx playwright install --with-deps chromium
       - name: Local browser regressions (real services excluded)
         run: npx playwright test --workers=1 --grep-invert @real-services
-      - run: npm run screenshots:update
-      - uses: actions/upload-artifact@v4
-        with:
-          name: screenshots
-          path: docs/screenshots/*.png
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

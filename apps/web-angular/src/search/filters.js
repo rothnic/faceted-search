@@ -9,15 +9,15 @@ import {
 
 export function renderToolbar() {
   return `
-    <section class="search-heading"><div><span class="eyebrow">Housing search playground</span><h1>Find your next home.</h1><p>Explore the Huntsville area with location, filters and meaning.</p></div>${state.storageMode === 'memory' ? '<span class="badge badge-outline demo-label">Sample dataset</span>' : ''}</section>
     <section class="toolbar card">
+      <div class="toolbar-heading"><h1>Find homes</h1>${state.storageMode === 'memory' ? '<span class="badge badge-outline demo-label">Sample data</span>' : ''}</div>
       <div class="field search-field">
         <label for="search-box">Search</label>
         <div class="search-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input class="input input-lg" id="search-box" value="${escapeHtml(state.request.q || '')}" placeholder="Try “a quiet home near good schools”" autocomplete="off" /></div>
         <div id="search-suggestions" class="suggestions" hidden></div>
       </div>
       <div class="search-options">
-        <div class="field"><span class="label">Search mode</span><div class="segmented">${['keyword', 'semantic', 'hybrid'].map((mode) => `<button type="button" data-mode="${mode}" class="btn btn-sm ${state.request.mode === mode ? 'active' : ''}">${mode}</button>`).join('')}</div></div>
+        <div class="field mode-field"><label for="search-mode">Mode</label><select class="select select-sm" id="search-mode">${['keyword', 'semantic', 'hybrid'].map((mode) => `<option value="${mode}" ${state.request.mode === mode ? 'selected' : ''}>${label(mode)}</option>`).join('')}</select></div>
         <div class="field provider-field"><label for="provider">Provider</label><select class="select select-sm" id="provider">${state.providers.map((item) => `<option value="${item.id}" ${item.id === state.request.provider ? 'selected' : ''}>${item.label}</option>`).join('')}</select></div>
         <div class="field sort-field"><label for="sort">Sort</label><select class="select select-sm" id="sort">${['relevance', 'distance', 'price_asc', 'price_desc', 'newest'].map((item) => `<option value="${item}" ${item === state.request.sort ? 'selected' : ''}>${label(item)}</option>`).join('')}</select></div>
       </div>
@@ -65,6 +65,7 @@ export function renderFilters() {
     <aside class="panel">
       <div class="filter-heading"><h2>Refine your search</h2>
       <button class="btn btn-sm btn-outline" type="button" id="clear-filters">Clear filters</button></div>
+      <button class="btn btn-sm btn-outline close-filter-panel" id="close-filter-panel" type="button" aria-controls="search-filters">Show results</button>
       <hr />
       <div class="facet-group" data-facet="saved-searches">
         <div class="facet-title">

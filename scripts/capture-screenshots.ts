@@ -1,47 +1,45 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { spawn, type ChildProcess } from 'node:child_process';
 import { chromium, type Page } from '@playwright/test';
 
-const baseURL = process.env.SCREENSHOT_BASE_URL ?? 'http://127.0.0.1:5173';
-let server: ChildProcess | undefined;
+const baseURL = process.env.SCREENSHOT_BASE_URL;
 
-async function isReachable() {
-  try {
-    const response = await fetch(`${baseURL}/search`);
-    return response.ok;
-  } catch {
-    return false;
-  }
+async function requireRealStack() {
+  if (!baseURL) throw new Error('SCREENSHOT_BASE_URL must identify an already-running, seeded real service stack.');
+  const response = await fetch(`${baseURL}/api/providers`);
+  if (!response.ok) throw new Error(`Provider status failed: ${response.status}`);
+  const status = await response.json();
+  if (status.storageMode !== 'postgres') throw new Error('Acceptance screenshots require PostgreSQL and actual search appliances; memory demo is not accepted.');
 }
 
-async function waitForServer() {
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    if (await isReachable()) return;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`Timed out waiting for ${baseURL}`);
-}
-
-async function ensureServer() {
-  if (await isReachable()) return;
-  server = spawn('npm', ['run', 'dev'], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: new URL(baseURL).port || '5173' },
-    stdio: 'inherit'
-  });
-  await waitForServer();
-}
-
+const executionEvidence: unknown[] = [];
 async function capture(page: Page, path: string) {
+  if (await page.locator('#search-diagnostics').count()) {
+    const diagnostic = JSON.parse(await page.locator('#search-diagnostics pre').first().innerText());
+    const {provider,mode,q} = diagnostic.request;
+    const external = ['meilisearch','typesense'].includes(provider);
+    const expected = !q || mode === 'keyword' ? external ? 'external-keyword' : provider === 'pg_search' ? 'postgres-bm25' : 'postgres-fts' : external ? `external-${mode}` : mode === 'semantic' ? 'postgres-vector' : 'postgres-hybrid';
+    if (diagnostic.debug?.execution !== expected) throw new Error(`Refusing ${path}: expected ${expected}, observed ${diagnostic.debug?.execution}`);
+    if (diagnostic.debug?.warnings?.length) throw new Error(`Refusing ${path}: search returned warnings: ${diagnostic.debug.warnings.join('; ')}`);
+    executionEvidence.push({path,request:diagnostic.request,debug:diagnostic.debug});
+  }
   if (await page.locator('#result-map').count()) await waitForMapTiles(page);
-  await page.evaluate(() => {
-    window.scrollTo(0, 0);
-    document.querySelectorAll('.stats').forEach((element) => {
-      element.textContent = element.textContent?.replace(/ in \d+(\.\d+)? ms/g, ' in 0.0 ms') ?? '';
-    });
-  });
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path, fullPage: false });
   console.log(`captured ${path}`);
+}
+
+const layoutEvidence: unknown[] = [];
+async function recordLayout(page: Page) {
+  layoutEvidence.push(await page.evaluate(() => {
+    const list = document.querySelector('#result-list-scroll')!.getBoundingClientRect();
+    const cards = [...document.querySelectorAll('.result')].map((card) => card.getBoundingClientRect());
+    const top = Math.max(0,list.top), bottom = Math.min(innerHeight,list.bottom);
+    return {url:location.href,viewport:{width:innerWidth,height:innerHeight},firstResultY:cards[0]?.y,
+      fullyVisible:cards.filter((r)=>r.top>=top&&r.bottom<=bottom).length,
+      partiallyVisible:cards.filter((r)=>r.top<bottom&&r.bottom>top).length,
+      warnings:[...document.querySelectorAll('.execution-warning')].map((element)=>element.textContent),
+      horizontalOverflow:document.documentElement.scrollWidth>innerWidth};
+  }));
 }
 
 async function goto(page: Page, path: string) {
@@ -88,19 +86,17 @@ async function waitForMapTiles(page: Page) {
 }
 
 async function main() {
-  await ensureServer();
+  await requireRealStack();
   const browser = await chromium.launch({ headless: process.env.SCREENSHOT_HEADED !== '1', executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   try {
   const page = await browser.newPage({ baseURL, viewport: { width: 1366, height: 900 } });
 
   page.on('requestfailed', (request) => console.error('REQUEST FAILED', request.url(), request.failure()?.errorText));
   page.on('response', (response) => { if (response.url().includes('tile.openstreetmap.org') && !response.ok()) console.error('TILE HTTP',response.status(),response.url()); });
-  await page.request.post('/api/seed');
 
   await goto(page, '/search?mode=keyword&q=hampton%20cove%20garage');
-  await waitForSearchReady(page, { loaded: 18, total: 47 });
+  await waitForSearchReady(page);
   await page.locator('.facet-group[data-facet="saved-searches"] input').first().waitFor();
-  await page.locator('#system-summary').getByText('CPU model ready', {exact:true}).waitFor();
   await capture(page, 'docs/screenshots/search-results.png');
 
   await page.locator('.result[data-house-id="target-hampton-cove-garage"]').click();
@@ -109,9 +105,15 @@ async function main() {
   await page.keyboard.press('Escape');
   await page.getByRole('dialog', { name: /Hampton Cove garage home/i }).waitFor({ state: 'hidden' });
 
+  // Meilisearch's native keyword prefix matching supplies real results for 'gar'.
+  // PostgreSQL English FTS correctly does not treat this as a prefix query.
+  await goto(page, '/search?provider=meilisearch&mode=keyword&q=garage');
+  await waitForSearchReady(page);
+  const suggestionsSearch = page.waitForResponse((response) => response.url().endsWith('/api/search') && response.request().postDataJSON()?.q === 'gar' && response.ok());
   await page.getByRole('textbox', { name: 'Search' }).fill('gar');
+  await suggestionsSearch;
   await page.getByRole('button', { name: /garage\s+Amenity/i }).waitFor();
-  await waitForSearchReady(page, { loaded: 18, total: 35 });
+  await waitForSearchReady(page);
   await page.evaluate(() => window.scrollTo(0, 0));
   const inputBox = await page.getByRole('textbox', { name: 'Search' }).boundingBox();
   const suggestionBox = await page.locator('#search-suggestions').boundingBox();
@@ -126,6 +128,17 @@ async function main() {
   await waitForSearchReady(page);
   await capture(page, 'docs/screenshots/saved-search-scope.png');
 
+  for (const {provider,mode,q} of [
+    {provider:'postgres_native',mode:'semantic',q:'effortless upkeep condominium beside eateries'},
+    {provider:'pg_search',mode:'keyword',q:'garage'},
+    {provider:'meilisearch',mode:'semantic',q:'effortless upkeep condominium beside eateries'},
+    {provider:'typesense',mode:'hybrid',q:'garage'}
+  ]) {
+    await goto(page, `/search?${new URLSearchParams({provider,mode,q})}`);
+    await waitForSearchReady(page);
+    await capture(page, `docs/screenshots/native-${provider}.png`);
+  }
+
   await goto(page, '/providers');
   await page.getByRole('heading', { name: 'Provider Comparison' }).waitFor();
   await capture(page, 'docs/screenshots/provider-comparison.png');
@@ -133,13 +146,22 @@ async function main() {
   await goto(page, '/system');
   await page.getByRole('heading', { name: 'External indexes' }).waitFor();
   await capture(page, 'docs/screenshots/system-status.png');
+  await page.locator('#embedding-pipeline').getByText('Durable PostgreSQL queue', {exact:true}).waitFor();
+  await page.locator('#embedding-pipeline').screenshot({path:'docs/screenshots/embedding-pipeline.png'});
   await goto(page, '/schema');
   await page.locator('#schema-count').waitFor();
   await capture(page, 'docs/screenshots/schema-explorer.png');
+  await goto(page, '/search?provider=postgres_native&mode=keyword&q=garage');
+  await waitForSearchReady(page);
+  await capture(page, 'docs/screenshots/compact-desktop-search.png');
+  await recordLayout(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await goto(page, '/search?mode=keyword&q=garage');
   await waitForSearchReady(page);
   await capture(page, 'docs/screenshots/mobile-search.png');
+  await recordLayout(page);
+  await writeFile('docs/screenshots/native-layout-evidence.json', JSON.stringify(layoutEvidence, null, 2));
+  await writeFile('docs/screenshots/native-execution-evidence.json', JSON.stringify(executionEvidence, null, 2));
 
   } finally { await browser.close(); }
 }
@@ -148,7 +170,4 @@ main()
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;
-  })
-  .finally(() => {
-    server?.kill('SIGTERM');
   });

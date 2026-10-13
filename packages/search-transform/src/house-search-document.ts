@@ -43,8 +43,8 @@ export function buildSemanticText(house: House, city: City, neighborhood?: Neigh
     neighborhood?.name,
     house.schoolDistrict,
     house.propertyType.replaceAll('_', ' '),
-    house.amenities.join(' '),
-    house.tags.join(' ')
+    [...house.amenities].sort().join(' '),
+    [...house.tags].sort().join(' ')
   ]
     .filter(Boolean)
     .join(' ')

@@ -37,6 +37,7 @@ export async function refreshStatus() {
   if (pending) return pending;
   pending = (async () => {
     await Promise.all([
+      api('/api/embedding-jobs', { signal: AbortSignal.timeout(10000) }).then((data) => { state.embeddingJobs = data; state.embeddingJobsError = null; }).catch((error) => { state.embeddingJobs = null; state.embeddingJobsError = error.message; }),
       api('/api/embeddings', { signal: AbortSignal.timeout(10000) }).then((data) => { state.embeddings = data; state.embeddingError = null; }).catch((error) => { state.embeddings = null; state.embeddingError = error.message; }),
       api('/api/sync/status', { signal: AbortSignal.timeout(10000) }).then((data) => { state.sync = data; state.syncError = null; state.storageMode = data.storageMode ?? state.storageMode; }).catch((error) => { state.sync = null; state.syncError = error.message; })
     ]);
