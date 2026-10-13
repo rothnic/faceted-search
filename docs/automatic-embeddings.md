@@ -21,11 +21,18 @@ Node ≥22.12, npm and Docker Compose:
 npm ci
 npm run native-models:prepare
 npm run stack:full:detached
-npm run seed
+# Wait for app dependency installation and API readiness.
+for attempt in $(seq 1 60); do
+  curl -fsS http://127.0.0.1:5173/api/providers >/dev/null && break
+  sleep 2
+done
+curl -fsS http://127.0.0.1:5173/api/providers >/dev/null && npm run seed
 # Seed commits immediately; generation/indexing proceeds automatically.
 curl http://127.0.0.1:5173/api/embedding-jobs
-npm run verify:full-stack
+TEST_DISPOSABLE_STACK=1 DEMO_URL=http://127.0.0.1:5173 npm run verify:full-stack
 ```
+
+Both `seed` and `verify:full-stack` reset demo data; the latter also edits a listing and requires explicit target/disposable-stack opt-in. Use only a disposable stack. If the API does not start, inspect `docker compose -f compose/docker-compose.full.yml logs app` after the bounded readiness wait fails.
 
 `compose/Dockerfile.postgres` builds pinned pgvector **0.8.7** and PGMQ **1.13.0** plus official ParadeDB **pg_search 0.26.1** into PostgreSQL **15.19**. The pg_search package is AGPL-3.0-or-later and adds a 266.5 MiB native library; see [verified installation and license details](pg-search-installation.md). Source commit/archive hashes and the base image digest are pinned. No Redis, queue container, Supabase project, `pg_cron`, `pg_net`, Edge Function or paid API is needed. PGMQ uses ordinary logged queues, so `pg_partman` is not needed either.
 
@@ -96,6 +103,8 @@ Measured 2026-10-13 on dot's Linux x64 AMD EPYC 9V74, Node 24.19, one Node/Meili
 |Meili native process RSS, same proof |272MiB |
 |Full 126-row automatic PG + BM25 + Meili generation/source sync |112s, serial job processing including native indexing/task confirmation |
 |Full real application fresh query HTTP, 126 rows |PG 18–39 ms; Meili 196–201 ms, including native page/facet and complete map queries |
+
+The first [official-container CI run](https://github.com/rothnic/faceted-search/actions/runs/38460316586) also passed all native integration checks and all 12 real-browser cases. Its 126-row automatic pipeline took 132.7s. Three fresh full-API semantic queries per provider measured PostgreSQL 16.5–18.9ms, pg_search selection 22.1–24.1ms (semantic uses pgvector), Meili 96.1–237.3ms and Typesense 25.0–33.3ms. These include API/filter/map work, not isolated inference. The post-test Docker memory snapshot was PostgreSQL 75.66MiB, Meili 300MiB and Typesense 176.3MiB; it is neither peak usage nor total application memory. The [diagnostic artifact](https://github.com/rothnic/faceted-search/actions/runs/38460316586/artifacts/11846251051) preserves the snapshot. That run failed afterward in screenshot automation, so its backend/browser results do not establish visual acceptance.
 
 The earlier PR1 ~1.6ms **repeat API query was cached**, not a fresh model benchmark. Weight download time, model initialization, fresh inference, result scanning and cache hits are different costs. These small-fixture observations are not production capacity guarantees. Clean Typesense native acceptance is performed in the official container: this cloud host has an unrelated ONNX shared-provider library that triggers the standalone binary's CUDA autodetection. No host libraries/security settings are changed.
 

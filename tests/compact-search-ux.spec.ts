@@ -5,6 +5,17 @@ for (const viewport of [{width:1366,height:900},{width:390,height:844}]) {
     await page.setViewportSize(viewport);
     await page.goto('/search?mode=keyword&q=garage');
     await expect(page.locator('.result').first()).toBeVisible();
+    await expect(page.locator('#system-info')).not.toHaveAttribute('open');
+    await expect(page.locator('#result-info')).not.toHaveAttribute('open');
+    await page.locator('#system-info-toggle').click();
+    await expect(page.locator('#summary-schema-link')).toBeVisible();
+    await page.locator('#summary-schema-link').focus();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#system-info')).not.toHaveAttribute('open');
+    await page.locator('#result-info-toggle').click();
+    await expect(page.locator('[data-virtual-summary]')).toBeVisible();
+    await page.locator('#result-info-toggle').press('Escape');
+    await expect(page.locator('#result-info')).not.toHaveAttribute('open');
     const geometry = await page.evaluate(() => {
       const cards = [...document.querySelectorAll('.result')].map((card) => card.getBoundingClientRect());
       const warningHeight = [...document.querySelectorAll('.execution-warning')].reduce((height,element) => height + element.getBoundingClientRect().height + parseFloat(getComputedStyle(element).marginBottom), 0);

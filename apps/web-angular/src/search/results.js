@@ -50,18 +50,19 @@ export function renderResults() {
   return `
     <section class="results-panel">
       <div class="results-head">
-        <div>
-          <h2>Matching homes <span class="result-total">${response.totalHits}</span></h2>
-          <div class="stats">${response.totalHits} hits from ${response.providerLabel} in ${response.processingTimeMs} ms</div>
+        <h2>Homes <span class="result-total">${response.totalHits}</span></h2>
+        ${renderRefinements()}
+        <div class="result-tools">${filterToggle()}<button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button>
+          <details class="result-info" id="result-info"><summary id="result-info-toggle" aria-label="Search result information">ⓘ</summary><div class="result-info-content">
+            <p class="stats">${response.totalHits} hits from ${response.providerLabel} in ${response.processingTimeMs} ms</p>
+            <p class="confidence-note">${state.request.mode === 'keyword' ? 'Keyword relevance' : state.request.mode === 'semantic' ? 'Semantic similarity' : 'Hybrid relevance'} scores are ordering signals, not confidence percentages.</p>
+            <div class="virtual-summary stats" data-virtual-summary></div>
+          </div></details>
         </div>
-        <div class="result-tools">${filterToggle()}<button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button></div>
       </div>
-      <div class="result-context">${renderRefinements()}
-      <details class="ranking-note"><summary>About this ranking</summary><p class="confidence-note">${state.request.mode === 'keyword' ? 'Keyword relevance' : state.request.mode === 'semantic' ? 'Semantic similarity' : 'Hybrid relevance'} scores are ordering signals, not confidence percentages.</p></details></div>
       ${(response.debug?.warnings || []).map((warning) => `<p class="notice execution-warning">${escapeHtml(warning)}</p>`).join('')}
       <div class="results-workspace"><div class="listing-column">
       ${response.hits.length ? `
-        <div class="virtual-summary stats" data-virtual-summary>Showing ${response.hits.length} of ${response.totalHits} loaded listings</div>
         <div id="result-list-scroll" class="result-list-scroll" data-loaded-count="${response.hits.length}" data-total-count="${response.totalHits}">
           <div id="result-list-spacer" class="result-list-spacer"></div>
         </div>

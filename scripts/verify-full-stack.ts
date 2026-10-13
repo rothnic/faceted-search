@@ -1,5 +1,15 @@
 import { postApi } from './api-client.js';
 
+// This legacy smoke test resets source data and mutates a listing. Never infer
+// permission from a reachable fixed port or PostgreSQL storage mode.
+if (process.env.TEST_DISPOSABLE_STACK !== '1' || !process.env.DEMO_URL) {
+  throw new Error('Destructive verification resets listings and saved searches. Set TEST_DISPOSABLE_STACK=1 and an explicit DEMO_URL only for your disposable demo stack.');
+}
+const target = new URL(process.env.DEMO_URL);
+if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password || target.search || target.hash || target.pathname !== '/') {
+  throw new Error('DEMO_URL must be an HTTP(S) origin for the explicitly disposable demo stack.');
+}
+
 async function getApi(path: string) {
   const baseUrl = process.env.DEMO_URL ?? 'http://127.0.0.1:5173';
   const response = await fetch(`${baseUrl}${path}`);

@@ -19,12 +19,12 @@ export function modelProgress(model) {
 }
 
 export function renderSystemStrip() {
-  return `<div class="system-strip" aria-label="System summary">
+  return `<details class="system-info" id="system-info"><summary id="system-info-toggle">System info${state.embeddingError || state.syncError || state.embeddingJobsError ? ' · attention' : ''}</summary><div class="system-info-content"><div class="system-strip" aria-label="System summary">
     <a id="summary-system-link" href="/system" class="status-badge">${storageLabel()}</a>
     <span>${e(embeddingLabel())}</span>
     <span>${state.syncError ? 'Sync status unavailable' : state.sync ? `${state.sync.outboxPendingCount} pending sync events${state.storageMode === 'memory' ? ' (simulated)' : ''}` : 'Sync status not checked'}</span>
     <a id="summary-schema-link" href="/schema">Inspect schema</a>
-  </div>${modelProgress(state.embeddings)}`;
+  </div>${modelProgress(state.embeddings)}</div></details>`;
 }
 
 export function updateSystemStrip() {

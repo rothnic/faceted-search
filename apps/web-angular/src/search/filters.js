@@ -1,3 +1,4 @@
+import { renderSystemStrip } from '../system-status.js';
 import {
   FACET_VISIBLE_LIMIT,
   escapeHtml,
@@ -10,7 +11,7 @@ import {
 export function renderToolbar() {
   return `
     <section class="toolbar card">
-      <div class="toolbar-heading"><h1>Find homes</h1>${state.storageMode === 'memory' ? '<span class="badge badge-outline demo-label">Sample data</span>' : ''}</div>
+      <div class="toolbar-heading"><h1>Find homes</h1><div id="system-summary">${renderSystemStrip()}</div>${state.storageMode === 'memory' ? '<span class="badge badge-outline demo-label">Sample data</span>' : ''}</div>
       <div class="field search-field">
         <label for="search-box">Search</label>
         <div class="search-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input class="input input-lg" id="search-box" value="${escapeHtml(state.request.q || '')}" placeholder="Try “a quiet home near good schools”" autocomplete="off" /></div>
@@ -75,7 +76,7 @@ export function renderFilters() {
         ${state.savedSearches.map((search) => `
           <label class="facet-option">
             <input class="checkbox checkbox-sm" type="checkbox" id="saved-filter-${escapeHtml(search.id)}" data-saved-search="${escapeHtml(search.id)}" ${savedIds.has(search.id) ? 'checked' : ''} />
-            <span>${escapeHtml(search.name)}</span>
+            <span title="${escapeHtml(search.name)}">${escapeHtml(search.name)}</span>
             <span class="count" title="${escapeHtml(search.evaluationError || 'Current match count')}">${savedSearchCountLabel(search)}</span>
           </label>
         `).join('') || `<span class="stats">${state.savedSearchesLoading ? 'Evaluating saved searches…' : state.savedSearchesError ? 'Saved searches unavailable' : 'No saved searches yet'}</span>`}

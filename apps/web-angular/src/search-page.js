@@ -13,7 +13,7 @@ import { renderFilters, renderToolbar } from './search/filters.js';
 import { closeHitDetails, openHitDetails, syncHitDialog } from './search/hit-dialog.js';
 import { renderLeafletMap } from './search/map.js';
 import { renderDebug, renderResults } from './search/results.js';
-import { refreshStatus, renderSystemStrip } from './system-status.js';
+import { refreshStatus } from './system-status.js';
 import { setupVirtualizedResults } from './search/virtual-results.js';
 
 let searchDelegatesWired = false;
@@ -366,7 +366,11 @@ function wireSearchDelegates() {
     } catch (error) { state.operationError = error.message; renderSearchPage(); }
   });
   app.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') return closeHitDetails();
+    if (event.key === 'Escape') {
+      const disclosure = event.target.closest?.('.system-info[open], .result-info[open]');
+      if (disclosure) { disclosure.open = false; disclosure.querySelector('summary')?.focus(); }
+      return closeHitDetails();
+    }
     if (event.key !== 'Enter' && event.key !== ' ') return;
     if (!(event.target instanceof Element)) return;
     const card = event.target.closest('.result[data-open-hit]');
@@ -380,7 +384,6 @@ function renderSearchPage() {
   if (!document.querySelector('#search-filters')) {
     app.innerHTML = `
       ${renderToolbar()}
-      <div id="system-summary">${renderSystemStrip()}</div>
       <div class="layout">
         <div id="search-filters"></div>
         <div id="search-results"></div>

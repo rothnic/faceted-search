@@ -199,6 +199,7 @@ test('status polling preserves keyboard focus on disclosure, schema links and se
   await expect(schemaLink).toBeFocused();
   await page.goto('/search?mode=keyword');
   await expect(page.locator('#result-list-scroll')).toBeVisible();
+  await page.locator('#system-info-toggle').click();
   const searchLink = page.locator('#summary-schema-link');
   await searchLink.focus(); previous = snapshots;
   await page.clock.fastForward(11000);

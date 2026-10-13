@@ -29,7 +29,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck && npm run verify:appliance-readiness
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: models
         with:
           path: |
             data/models
@@ -37,6 +38,14 @@ jobs:
           key: native-minilm-751bff37-1110a243-linux-x64-v1
       - name: Verify CPU inference and prepare pinned native model files
         run: npm run verify:embeddings && npm run native-models:prepare
+      # Preserve verified public weights even if a later browser/assertion fails.
+      - uses: actions/cache/save@v4
+        if: steps.models.outputs.cache-hit != 'true'
+        with:
+          path: |
+            data/models
+            data/native-models
+          key: native-minilm-751bff37-1110a243-linux-x64-v1
       - name: Build pinned PostgreSQL extensions and start disposable real engines
         run: |
           docker build -t faceted-postgres-test -f compose/Dockerfile.postgres .

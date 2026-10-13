@@ -18,7 +18,7 @@ Semantic and hybrid searches now run a real, quantized sentence embedding model 
 
 ```bash
 npm ci
-npm run dev
+npm run demo:memory
 # Open http://127.0.0.1:5173/search?mode=semantic&q=effortless%20upkeep%20condominium%20beside%20eateries
 ```
 
@@ -35,7 +35,7 @@ The companion UX change presents model loading/errors and unavailable live count
 npm run verify:embeddings
 
 # Afterwards, prohibit downloads and use the same pinned cache:
-EMBEDDING_OFFLINE=1 npm run dev
+EMBEDDING_OFFLINE=1 npm run demo:memory
 ```
 
 `EMBEDDING_CACHE_DIR` overrides the default `data/models` directory. Offline mode reads only that directory's exact model/revision subdirectory and fails clearly if files are missing. Copy the complete model/revision directory when transferring a cache. Changing or corrupting files in that cache is unsupported. A failed load returns HTTP 503 for affected semantic queries; keyword and unscoped blank searches remain usable. Failed initialization/cache entries are cleared so a later request can retry. Missing live saved-search counts return `currentHitCount: null` plus `evaluationError`, never an invented zero count.
@@ -53,7 +53,7 @@ The `.npmrc` skips optional CUDA downloads. For package managers that do not hon
 
 The fixed threshold is a POC relevance choice, not a probability. Calibrate it and hybrid weights against labeled examples before production. Broad questions can still return weak matches. Long text is truncated, and structured filters remain necessary for exact price, bedroom, location and other numeric constraints. Score is not a percentage confidence.
 
-All four provider selections use this same application-side ranker for semantic/hybrid requests, including when listings come from real PostgreSQL. This is not an implementation of pgvector, `pg_search`, Meilisearch embedders, or a Typesense vector index. Real external-engine keyword routes, backfill/sync and direct InstantSearch adapters retain their existing behavior. Local semantic hits, facets, map markers, total counts, saved-search scopes and live counts derive from the same full candidate set. Saved-search tracking includes all local matched IDs rather than just the visible page.
+In the explicitly selected memory fixture mode, all four provider labels use this application-side ranker for semantic/hybrid requests. This fixture path does not exercise pgvector, `pg_search`, Meilisearch embedders, or a Typesense vector index. The connected stack instead uses the native engine paths documented in [automatic embeddings](automatic-embeddings.md). Local semantic hits, facets, map markers, total counts, saved-search scopes and live counts derive from the same full candidate set. Saved-search tracking includes all local matched IDs rather than just the visible page.
 
 Exact scanning and in-memory caching suit this 126-row demo. This is not a production serving/ANN architecture; large corpora would need persistent model-versioned vectors, an index and operational limits. There is no new scheduler or background indexing service.
 
@@ -77,4 +77,4 @@ Measured October 13, 2026 on Linux x64, Node 24.19.0, AMD EPYC 9V74 cloud CPU, o
 | Repeat identical API query with vectors cached | 1.6 ms |
 | Verifier process resident memory after inference | 251 MiB |
 
-The synthetic fixture repeats content across rows, so deduplication reduces actual document inference. Results and timing vary with runtime version, hardware, query, model cache, content length and corpus diversity. Docker/real PostgreSQL/Meilisearch/Typesense integration must be verified separately with `npm run verify:full-stack`; the CPU verifier does not establish those services are running.
+The synthetic fixture repeats content across rows, so deduplication reduces actual document inference. Results and timing vary with runtime version, hardware, query, model cache, content length and corpus diversity. Docker/real PostgreSQL/Meilisearch/Typesense integration must be verified separately using the [disposable native acceptance commands](automatic-embeddings.md#verification-and-measured-costs); the CPU verifier does not establish those services are running.

@@ -8,7 +8,7 @@ test('keyword search ranks the Hampton Cove garage listing highly', async ({ pag
   await page.goto('/search?mode=keyword');
   await page.getByRole('textbox', { name: 'Search' }).fill('hampton cove garage');
   await expect(page.getByRole('heading', { name: /Hampton Cove garage home/i })).toBeVisible();
-  await expect(page.getByText(/hits from Native PostgreSQL/i)).toBeVisible();
+  await expect(page.locator('#result-info')).toContainText('hits from Native PostgreSQL');
   await expect(page.getByText('garage').first()).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Search' })).toBeFocused();
 });
@@ -56,6 +56,8 @@ test('provider switcher keeps the same UI while changing debug payloads', async 
     ['typesense', 'PostgreSQL + Typesense']
   ]) {
     await page.getByLabel('Provider').selectOption(value);
+    await expect(page.locator('#result-info .stats').first()).toContainText(label);
+    await page.locator('#result-info-toggle').click();
     await expect(page.locator('.stats', { hasText: label })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Quiet cul-de-sac home/i })).toBeVisible();
   }
@@ -252,11 +254,11 @@ test('saved search counts are live and multiple applied saved searches OR to the
   expect(condo.currentHitCount).toBeGreaterThan(0);
 
   await savedScope.getByLabel(/Hampton Cove garage scope/).check();
-  await expect(page.getByText(new RegExp(`${hampton.currentHitCount} hits from Native PostgreSQL`, 'i'))).toBeVisible();
+  await expect(page.locator('.result-total')).toHaveText(String(hampton.currentHitCount));
   await expect(savedScope.locator('.facet-title')).toContainText(`${hampton.currentHitCount} matches`);
 
   await savedScope.getByLabel(/Low maintenance condo scope/).check();
-  await expect(page.getByText(new RegExp(`${union.totalHits} hits from Native PostgreSQL`, 'i'))).toBeVisible();
+  await expect(page.locator('.result-total')).toHaveText(String(union.totalHits));
   await expect(savedScope.locator('.facet-title')).toContainText(`${union.totalHits} matches`);
   await expect(page.getByRole('heading', { name: /Hampton Cove garage home/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Low maintenance condo close to restaurants/i })).toBeVisible();
@@ -267,7 +269,7 @@ test('saving manual filters adds and applies the new saved search without leavin
   await page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/).check();
   await page.locator('[data-range="maxPrice"]').fill('350000');
   await page.locator('[data-range="maxPrice"]').press('Enter');
-  await expect(page.getByText(/10 hits from Native PostgreSQL/i)).toBeVisible();
+  await expect(page.locator('.result-total')).toHaveText('10');
 
   page.once('dialog', async (dialog) => {
     await dialog.accept('Madison under 350k saved in place');
@@ -278,7 +280,7 @@ test('saving manual filters adds and applies the new saved search without leavin
   await expect(page.getByRole('button', { name: /saved: Madison under 350k saved in place/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /city: Madison/i })).toBeHidden();
   await expect(page.getByRole('button', { name: /maxPrice: 350000/i })).toBeHidden();
-  await expect(page.getByText(/10 hits from Native PostgreSQL/i)).toBeVisible();
+  await expect(page.locator('.result-total')).toHaveText('10');
 
   const savedScope = page.locator('.facet-group[data-facet="saved-searches"]');
   const savedOption = savedScope.locator('.facet-option', { has: page.getByLabel(/Madison under 350k saved in place/) });
@@ -305,7 +307,7 @@ test('applying a saved search from the filter panel scopes hits, facets, and its
   await page.goto('/search?mode=keyword');
   await page.locator('.facet-group[data-facet="saved-searches"]').getByLabel(/Madison under 350k panel scope/).check();
 
-  await expect(page.getByText(/10 hits from Native PostgreSQL/i)).toBeVisible();
+  await expect(page.locator('.result-total')).toHaveText('10');
   const savedScope = page.locator('.facet-group[data-facet="saved-searches"]');
   const savedOption = savedScope.locator('.facet-option', { has: page.getByLabel(/Madison under 350k panel scope/) });
   await expect(savedOption.locator('.count')).toHaveText('10');
