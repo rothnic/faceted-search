@@ -31,7 +31,7 @@ function renderVirtualRows() {
   const spacer = document.querySelector('#result-list-spacer');
   const summary = document.querySelector('[data-virtual-summary]');
   const virtualizer = state.resultVirtualizer;
-  if (!scrollElement || !spacer || !virtualizer || !state.response) return;
+  if (!scrollElement || !spacer || !virtualizer || !state.response || !scrollElement.getClientRects().length) return;
 
   const hits = state.response.hits;
   const virtualItems = virtualizer.getVirtualItems();
@@ -70,7 +70,11 @@ function virtualizerOptions(scrollElement) {
     scrollToFn: elementScroll,
     observeElementRect,
     observeElementOffset,
-    measureElement,
+    // A hidden mobile list has zero-sized rows. Keep their measured heights so
+    // switching views cannot feed zero sizes into scroll anchoring.
+    measureElement: (element, entry, instance) => element.getClientRects().length
+      ? measureElement(element, entry, instance)
+      : (instance.measurementsCache[Number(element.dataset.index)]?.size ?? 178),
     onChange: () => renderVirtualRows()
   };
 }

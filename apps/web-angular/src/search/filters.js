@@ -8,6 +8,8 @@ import {
   state
 } from '../core.js';
 
+const providerControlLabel = (item) => ({postgres_native:'PostgreSQL', pg_search:'PostgreSQL · BM25', meilisearch:'Meilisearch', typesense:'Typesense'}[item.id] || item.label);
+
 export function renderToolbar() {
   return `
     <section class="toolbar card">
@@ -19,7 +21,7 @@ export function renderToolbar() {
       </div>
       <div class="search-options">
         <div class="field mode-field"><label for="search-mode">Mode</label><select class="select select-sm" id="search-mode">${['keyword', 'semantic', 'hybrid'].map((mode) => `<option value="${mode}" ${state.request.mode === mode ? 'selected' : ''}>${label(mode)}</option>`).join('')}</select></div>
-        <div class="field provider-field"><label for="provider">Provider</label><select class="select select-sm" id="provider">${state.providers.map((item) => `<option value="${item.id}" ${item.id === state.request.provider ? 'selected' : ''}>${item.label}</option>`).join('')}</select></div>
+        <div class="field provider-field"><label for="provider">Provider</label><select class="select select-sm" id="provider">${state.providers.map((item) => `<option value="${item.id}" ${item.id === state.request.provider ? 'selected' : ''}>${escapeHtml(providerControlLabel(item))}</option>`).join('')}</select></div>
         <div class="field sort-field"><label for="sort">Sort</label><select class="select select-sm" id="sort" aria-label="Sort results">${['relevance', 'distance', 'price_asc', 'price_desc', 'newest'].map((item) => `<option value="${item}" ${item === state.request.sort ? 'selected' : ''}>${label(item)}</option>`).join('')}</select></div>
       </div>
       <div class="mobile-search-actions"><button id="toggle-filters" class="btn btn-sm btn-primary mobile-filter-toggle" aria-label="Show or hide filters" aria-controls="search-filters" aria-expanded="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M5 10h10M8 15h4"/></svg>Filters <span id="active-filter-count" class="filter-count" hidden></span></button></div>
@@ -69,7 +71,7 @@ export function renderFilters() {
       <button class="btn btn-sm btn-outline" type="button" id="clear-filters">Clear filters</button></div>
       <button class="btn btn-sm btn-outline close-filter-panel" id="close-filter-panel" type="button" aria-controls="search-filters">Show results</button>
       <div class="mobile-provider-controls">
-        <div class="field"><label for="mobile-provider">Search provider</label><select class="select" id="mobile-provider">${state.providers.map((item) => `<option value="${item.id}" ${item.id === state.request.provider ? 'selected' : ''}>${item.label}</option>`).join('')}</select></div>
+        <div class="field"><label for="mobile-provider">Search provider</label><select class="select" id="mobile-provider">${state.providers.map((item) => `<option value="${item.id}" ${item.id === state.request.provider ? 'selected' : ''}>${escapeHtml(providerControlLabel(item))}</option>`).join('')}</select></div>
         <div class="field"><label for="mobile-mode">Search mode</label><select class="select" id="mobile-mode">${['keyword','semantic','hybrid'].map((mode) => `<option value="${mode}" ${state.request.mode === mode ? 'selected' : ''}>${label(mode)}</option>`).join('')}</select></div>
       </div>
       <hr />

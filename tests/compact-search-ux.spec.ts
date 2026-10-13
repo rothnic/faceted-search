@@ -1,6 +1,6 @@
 import {expect,test} from '@playwright/test';
 
-for (const viewport of [{width:1366,height:900},{width:390,height:844},{width:320,height:844}]) {
+for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:390,height:844},{width:320,height:844}]) {
   test(`compact controls keep results above the fold at ${viewport.width}px`, async ({page}) => {
     await page.setViewportSize(viewport);
     await page.goto('/search?mode=keyword&q=garage');
@@ -86,6 +86,14 @@ for (const viewport of [{width:1366,height:900},{width:390,height:844},{width:32
       expect(Math.max(...controls.map(c=>c.inputY))-Math.min(...controls.map(c=>c.inputY))).toBeLessThan(1);
       expect(controls[0].background).not.toBe(controls[1].background);
       for (const control of controls.slice(1)) { expect(control.arrow).toContain('data:image/svg+xml'); expect(control.height).toBeGreaterThanOrEqual(40); }
+      const selectFit = await page.locator('#search-mode,#provider,#sort').evaluateAll(elements => elements.map(element => {
+        const select=element as HTMLSelectElement, style=getComputedStyle(select);
+        const canvas=document.createElement('canvas'), context=canvas.getContext('2d')!;
+        context.font=style.font;
+        return {id:select.id, available:select.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),
+          widest:Math.max(...[...select.options].map(option=>context.measureText(option.text).width))};
+      }));
+      for (const fit of selectFit) expect(fit.widest, `${fit.id} labels fit without ellipsis`).toBeLessThanOrEqual(fit.available);
       await page.getByLabel('Mode',{exact:true}).selectOption('semantic');
       await expect(page).toHaveURL(/mode=semantic/);
       await page.getByLabel('Mode',{exact:true}).selectOption('keyword');

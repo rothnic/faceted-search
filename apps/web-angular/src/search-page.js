@@ -11,7 +11,7 @@ import {
 } from './core.js';
 import { renderFilters, renderToolbar } from './search/filters.js';
 import { closeHitDetails, openHitDetails, syncHitDialog } from './search/hit-dialog.js';
-import { renderLeafletMap } from './search/map.js';
+import { renderLeafletMap, resizeVisibleMap } from './search/map.js';
 import { renderDebug, renderResults } from './search/results.js';
 import { refreshStatus } from './system-status.js';
 import { setupVirtualizedResults } from './search/virtual-results.js';
@@ -174,6 +174,7 @@ function requestBody() {
 }
 
 let searchTimer;
+let mapResizeBound = false;
 function scheduleSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(runSearch, 180);
@@ -183,6 +184,7 @@ export async function runSearch() {
   clearTimeout(searchTimer);
   const requestId = ++state.searchRequestId;
   state.isLoadingMore = false;
+  state.mobileListScrollTop = 0;
   state.loadMoreError = null;
   state.selectedHitId = null;
   state.isSearching = true;
@@ -323,6 +325,21 @@ function wireSearchDelegates() {
         toggle?.focus();
         return;
       }
+      if (target.id === 'mobile-view-toggle') {
+        const list = document.querySelector('#result-list-scroll');
+        const showMap = state.mobileResultsView !== 'map';
+        if (showMap && list) state.mobileListScrollTop = list.scrollTop;
+        state.mobileResultsView = showMap ? 'map' : 'list';
+        document.querySelector('#results-workspace').dataset.mobileView = state.mobileResultsView;
+        target.textContent = showMap ? 'List' : 'Map';
+        target.setAttribute('aria-label', showMap ? 'Show list' : 'Show map');
+        target.setAttribute('aria-pressed', String(showMap));
+        requestAnimationFrame(() => {
+          resizeVisibleMap();
+          if (!showMap && list) list.scrollTop = state.mobileListScrollTop;
+        });
+        return;
+      }
       if (target.id === 'toggle-filters') {
         const visible = target.getAttribute('aria-expanded') !== 'true';
         target.setAttribute('aria-expanded', String(visible));
@@ -400,6 +417,10 @@ function renderSearchPage() {
     `;
     wireSearchToolbar();
     wireSearchDelegates();
+    if (!mapResizeBound) {
+      window.matchMedia('(max-width:760px)').addEventListener('change', () => requestAnimationFrame(resizeVisibleMap));
+      mapResizeBound = true;
+    }
   }
   updateToolbarControls();
   setHtmlPreservingFocus(document.querySelector('#search-filters'), renderFilters());

@@ -26,7 +26,7 @@ async function capture(page: Page, path: string) {
     if (diagnostic.debug?.warnings?.length) throw new Error(`Refusing ${path}: search returned warnings: ${diagnostic.debug.warnings.join('; ')}`);
     executionEvidence.push({path,request:diagnostic.request,debug:diagnostic.debug});
   }
-  if (await page.locator('#result-map').count()) await waitForMapTiles(page);
+  if (await page.locator('#result-map').isVisible()) await waitForMapTiles(page);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path, fullPage: false });
   await writeFile(`${outputDir}/native-execution-evidence.json`, JSON.stringify(executionEvidence, null, 2));
@@ -53,8 +53,10 @@ async function goto(page: Page, path: string) {
 }
 
 async function waitForSearchReady(page: Page, expected?: { loaded?: number; total?: number }) {
-  await page.locator('.leaflet-container').waitFor();
-  await page.locator('.leaflet-interactive').first().waitFor();
+  if (await page.locator('#result-map').isVisible()) {
+    await page.locator('.leaflet-container').waitFor();
+    await page.locator('.leaflet-interactive').first().waitFor();
+  }
   await page.locator('#result-list-scroll').waitFor();
   await page.waitForFunction(
     ({ loaded: expectedLoaded, total: expectedTotal }) => {
@@ -110,6 +112,12 @@ async function main() {
   await waitForSearchReady(page);
   await capture(page, `${outputDir}/mobile-search.png`);
   await recordLayout(page);
+  const mobileUrl = page.url();
+  await page.getByRole('button', {name:'Show map',exact:true}).click();
+  await waitForMapTiles(page);
+  await capture(page, `${outputDir}/mobile-map.png`);
+  await page.getByRole('button', {name:'Show list',exact:true}).click();
+  if (page.url() !== mobileUrl) throw new Error('Map/List toggle changed the search criteria');
   await page.setViewportSize({ width: 1366, height: 900 });
 
   await goto(page, '/search?mode=keyword&q=hampton%20cove%20garage');

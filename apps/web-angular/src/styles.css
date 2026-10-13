@@ -224,7 +224,7 @@ h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
 
 .results-head { position:relative; z-index:2; }
 /* Aligned labels and distinct selection controls; mobile prioritizes search. */
-.toolbar { grid-template-columns:auto minmax(260px,1fr) 108px 180px 128px; gap:12px; }
+.toolbar { grid-template-columns:auto minmax(260px,1fr) 128px 190px 140px; gap:12px; }
 .toolbar .field { grid-template-rows:16px 42px; align-content:end; gap:4px; }
 .toolbar .field > label { display:block; height:16px; min-height:16px; margin:0; padding:0; line-height:16px; font-size:10px; }
 .toolbar .input,.toolbar .select,#search-box { height:42px; min-height:42px; }
@@ -239,7 +239,7 @@ h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
 .map-key > summary { padding:0 4px; min-height:28px; display:flex; align-items:center; cursor:pointer; font-size:11px; color:var(--muted); }
 .map-key .map-legend { position:absolute; right:0; top:100%; z-index:800; width:190px; padding:12px; display:grid; gap:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); box-shadow:0 4px 16px #18302b15; font-size:11px; }
 .map-feedback[data-state=ready] { display:none; }
-@media(max-width:1120px) { .toolbar { grid-template-columns:minmax(200px,1fr) 108px 170px 128px; } }
+@media(max-width:1120px) { .toolbar { grid-template-columns:minmax(160px,1fr) 128px 190px 140px; } }
 @media(max-width:760px) {
  .toolbar { grid-template-columns:minmax(0,1fr) 44px 44px; gap:8px 10px; }
  .toolbar .field { grid-template-rows:16px 44px; }
@@ -264,4 +264,12 @@ h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
  .result-list-scroll::-webkit-scrollbar { display:none; }
  .suggestions { width:100%; left:0; right:auto; }
  .map-key > summary { min-height:44px; }
+}
+.mobile-view-toggle { display:none; }
+@media(max-width:760px) {
+ .result-tools .mobile-view-toggle { display:inline-flex; min-height:44px; }
+ .results-workspace[data-mobile-view=list] > .map-column { display:none; }
+ .results-workspace[data-mobile-view=map] > .listing-column { display:none; }
+ .results-workspace[data-mobile-view=map] > .map-column { display:block; }
+ .results-workspace[data-mobile-view=map] .leaflet-result-map { height:min(60dvh,480px); min-height:300px; }
 }

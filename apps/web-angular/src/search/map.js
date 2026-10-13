@@ -33,7 +33,7 @@ export function renderLeafletMap() {
     state.resultMap.remove();
     state.resultMap = null;
   }
-  if (!mapElement || !state.response?.mapHits?.length) return;
+  if (!mapElement || !state.response?.mapHits?.length || !mapElement.getClientRects().length) return;
 
   const map = L.map(mapElement, {
     scrollWheelZoom: false,
@@ -95,4 +95,12 @@ export function renderLeafletMap() {
 
   if (bounds.length === 1) map.setView(bounds[0], 13);
   else map.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 });
+}
+
+// View changes resize the existing map; they never change the search or viewport.
+export function resizeVisibleMap() {
+  const element = document.querySelector('#result-map');
+  if (!element?.getClientRects().length) return;
+  if (!state.resultMap) renderLeafletMap();
+  else state.resultMap.invalidateSize({pan:false});
 }

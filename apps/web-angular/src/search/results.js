@@ -50,7 +50,7 @@ export function renderResults() {
       <div class="results-head">
         <h2>Homes <span class="result-total">${response.totalHits}</span></h2>
         ${renderRefinements()}
-        <div class="result-tools"><button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button>
+        <div class="result-tools">${response.mapHits?.length ? `<button class="btn btn-sm btn-outline mobile-view-toggle" id="mobile-view-toggle" aria-controls="results-workspace" aria-pressed="${state.mobileResultsView === 'map'}" aria-label="${state.mobileResultsView === 'map' ? 'Show list' : 'Show map'}">${state.mobileResultsView === 'map' ? 'List' : 'Map'}</button>` : ''}<button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button>
           <details class="result-info" id="result-info"><summary id="result-info-toggle" aria-label="Search result information">ⓘ</summary><div class="result-info-content">
             <p class="stats">${response.totalHits} hits from ${response.providerLabel} in ${response.processingTimeMs} ms</p>
             <p class="confidence-note">${state.request.mode === 'keyword' ? 'Keyword relevance' : state.request.mode === 'semantic' ? 'Semantic similarity' : 'Hybrid relevance'} scores are ordering signals, not confidence percentages.</p>
@@ -59,7 +59,7 @@ export function renderResults() {
         </div>
       </div>
       ${(response.debug?.warnings || []).map((warning) => `<p class="notice execution-warning">${escapeHtml(warning)}</p>`).join('')}
-      <div class="results-workspace"><div class="listing-column">
+      <div class="results-workspace" id="results-workspace" data-mobile-view="${response.mapHits?.length ? state.mobileResultsView : 'list'}"><div class="listing-column">
       ${response.hits.length ? `
         <div id="result-list-scroll" class="result-list-scroll" data-loaded-count="${response.hits.length}" data-total-count="${response.totalHits}">
           <div id="result-list-spacer" class="result-list-spacer"></div>

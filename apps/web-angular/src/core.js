@@ -32,6 +32,8 @@ const state = {
   savedSearchesError: null,
   operation: null,
   operationError: null,
+  mobileResultsView: 'list',
+  mobileListScrollTop: 0,
   searchRequestId: 0
 };
 
