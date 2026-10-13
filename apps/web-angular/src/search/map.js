@@ -43,6 +43,7 @@ export function renderLeafletMap() {
 
   const map = L.map(mapElement, {
     scrollWheelZoom: false,
+    fadeAnimation: false,
     zoomControl: true
   });
   state.resultMap = map;

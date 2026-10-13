@@ -35,6 +35,7 @@ async function ensureServer() {
 async function capture(page: Page, path: string) {
   if (await page.locator('#result-map').count()) await waitForMapTiles(page);
   await page.evaluate(() => {
+    window.scrollTo(0, 0);
     document.querySelectorAll('.stats').forEach((element) => {
       element.textContent = element.textContent?.replace(/ in \d+(\.\d+)? ms/g, ' in 0.0 ms') ?? '';
     });
@@ -70,14 +71,14 @@ async function waitForMapTiles(page: Page) {
     await page.waitForFunction(() => {
       const map = document.querySelector<HTMLElement>('#result-map');
       const tiles = [...(map?.querySelectorAll<HTMLImageElement>('.leaflet-tile-container img') ?? [])];
-      return map?.dataset.mapState === 'ready' && tiles.length > 0 && tiles.every((tile) => tile.complete && tile.naturalWidth > 0);
+      return map?.dataset.mapState === 'ready' && tiles.length > 0 && tiles.every((tile) => tile.complete && tile.naturalWidth > 0 && Number(getComputedStyle(tile).opacity) >= .99);
     }, undefined, { timeout: 20_000 });
   } catch (error) {
     await mkdir('test-results', { recursive: true });
     const diagnostic = await page.evaluate(() => ({
       url: location.href,
       state: document.querySelector<HTMLElement>('#result-map')?.dataset,
-      tiles: [...document.querySelectorAll<HTMLImageElement>('.leaflet-tile-container img')].map((tile) => ({src: tile.currentSrc, complete: tile.complete, width: tile.naturalWidth})),
+      tiles: [...document.querySelectorAll<HTMLImageElement>('.leaflet-tile-container img')].map((tile) => ({src: tile.currentSrc, complete: tile.complete, width: tile.naturalWidth, opacity: getComputedStyle(tile).opacity})),
       message: document.querySelector('.map-feedback')?.textContent
     }));
     await writeFile('test-results/map-readiness.json', JSON.stringify(diagnostic, null, 2));
@@ -98,6 +99,8 @@ async function main() {
 
   await goto(page, '/search?mode=keyword&q=hampton%20cove%20garage');
   await waitForSearchReady(page, { loaded: 18, total: 47 });
+  await page.locator('.facet-group[data-facet="saved-searches"] input').first().waitFor();
+  await page.locator('#system-summary').getByText('CPU model ready', {exact:true}).waitFor();
   await capture(page, 'docs/screenshots/search-results.png');
 
   await page.locator('.result[data-house-id="target-hampton-cove-garage"]').click();
