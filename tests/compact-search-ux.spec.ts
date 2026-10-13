@@ -5,17 +5,20 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
     await page.setViewportSize(viewport);
     await page.goto('/search?mode=keyword&q=garage');
     await expect(page.locator('.result').first()).toBeVisible();
+    await expect(page.locator('.results-panel > .results-head .result-tools #save-search')).toBeVisible();
+    await expect(page.locator('.results-panel > .results-workspace')).toBeVisible();
+    await expect(page.getByRole('button',{name:'Save search',exact:true})).toBeVisible();
+    const radii=await page.locator('#search-box,#save-search,.toolbar,.result').evaluateAll(es=>es.map(e=>parseFloat(getComputedStyle(e).borderTopLeftRadius)));
+    expect(Math.max(...radii)).toBeLessThanOrEqual(8);
     await expect(page.locator('#system-info')).not.toHaveAttribute('open');
-    await expect(page.locator('#result-info')).not.toHaveAttribute('open');
     await page.locator('#system-info-toggle').click();
     await expect(page.locator('#summary-schema-link')).toBeVisible();
     await page.locator('#summary-schema-link').focus();
     await page.keyboard.press('Escape');
     await expect(page.locator('#system-info')).not.toHaveAttribute('open');
-    await page.locator('#result-info-toggle').click();
+    await page.locator('#system-info-toggle').click();
     await expect(page.locator('[data-virtual-summary]')).toBeVisible();
-    await page.locator('#result-info-toggle').press('Escape');
-    await expect(page.locator('#result-info')).not.toHaveAttribute('open');
+    await page.locator('#system-info-toggle').press('Escape');
     await expect(page.locator('.map-key')).not.toHaveAttribute('open');
     const visibleCountCopies = await page.evaluate(() => {
       const text = [...document.querySelectorAll<HTMLElement>('.results-head,.map-head')].map(e=>e.innerText).join(' ');
@@ -44,6 +47,10 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       expect(filterBox.height).toBeGreaterThanOrEqual(44);
       expect(filterBox.y).toBeGreaterThanOrEqual(inputBox.y+inputBox.height);
       expect(Math.abs(filterBox.y-sortBox.y)).toBeLessThan(1);
+      expect(filterBox.x).toBeGreaterThan(sortBox.x);
+      await expect(page.locator('#result-info-toggle')).toHaveCount(0);
+      const utilityStyles=await page.locator('#sort,#system-info-toggle').evaluateAll(es=>es.map(e=>({border:getComputedStyle(e).borderTopWidth,height:e.getBoundingClientRect().height})));
+      for(const utility of utilityStyles) { expect(utility.border).toBe('0px'); expect(utility.height).toBeGreaterThanOrEqual(44); }
       const cardBox = (await page.locator('.result').first().boundingBox())!;
       expect(Math.abs(cardBox.x-(viewport.width-cardBox.x-cardBox.width))).toBeLessThanOrEqual(2);
       await page.locator('#search-box').fill('gar');

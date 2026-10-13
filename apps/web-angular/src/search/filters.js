@@ -8,7 +8,7 @@ import {
   state
 } from '../core.js';
 
-const providerControlLabel = (item) => ({postgres_native:'PostgreSQL', pg_search:'PostgreSQL · BM25', meilisearch:'Meilisearch', typesense:'Typesense'}[item.id] || item.label);
+const providerControlLabel = (item) => ({postgres_native:'PostgreSQL', pg_search:'pg_search', meilisearch:'Meilisearch', typesense:'Typesense'}[item.id] || item.label);
 
 export function renderToolbar() {
   return `

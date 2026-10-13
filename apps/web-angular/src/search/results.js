@@ -21,9 +21,9 @@ function renderRefinements() {
   if (state.request.geo) parts.push({ label: `radius: ${state.request.geo.radiusMiles} miles`, action: 'geo' });
   if (state.request.viewport) parts.push({ label: 'inside map viewport', action: 'viewport' });
   return `<div class="refinements">${parts.map((part) => `
-    <button type="button" class="btn btn-sm pill refinement-pill" data-remove-refinement="${part.action}" ${part.key ? `data-key="${part.key}"` : ''} ${part.value !== undefined ? `data-value="${escapeHtml(part.value)}"` : ''}>
+    <button type="button" class="badge badge-outline badge-primary refinement-pill" aria-label="Remove ${escapeHtml(part.label)}" data-remove-refinement="${part.action}" ${part.key ? `data-key="${part.key}"` : ''} ${part.value !== undefined ? `data-value="${escapeHtml(part.value)}"` : ''}>
       <span>${escapeHtml(part.label)}</span>
-      <span aria-hidden="true">x</span>
+      <span aria-hidden="true">×</span>
     </button>
   `).join('') || '<span class="stats">No refinements selected</span>'}</div>`;
 }
@@ -31,12 +31,12 @@ function renderRefinements() {
 export function renderResultCard(hit) {
   return `
     <article class="result card" data-house-id="${hit.id}" data-open-hit="${hit.id}" tabindex="0">
-      <div class="result-topline"><strong class="result-price">${currency(hit.price)}</strong><span class="status-pill badge badge-sm">${titleLabel(hit.listingStatus)}</span></div>
+      <div class="result-topline"><strong class="result-price">${currency(hit.price)}</strong><span class="badge badge-soft ${hit.listingStatus === 'active' ? 'badge-success' : 'badge-neutral'} badge-sm">${titleLabel(hit.listingStatus)}</span></div>
       <h3>${escapeHtml(hit.title)}</h3>
       <p class="result-location">${escapeHtml(hit.city)}${hit.neighborhood ? ` · ${escapeHtml(hit.neighborhood)}` : ''}</p>
       <div class="meta property-facts"><span>${hit.bedrooms} bd</span><span>${hit.bathrooms} ba</span><span>${hit.squareFeet.toLocaleString()} sqft</span>${hit.distanceMiles !== undefined ? `<span>${hit.distanceMiles.toFixed(1)} mi away</span>` : ''}</div>
       <p class="result-description">${escapeHtml(hit.description)}</p>
-      <div class="result-actions"><div class="amenities">${hit.amenities.map((item) => `<button type="button" class="btn btn-xs btn-ghost pill hit-chip" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div><button type="button" class="btn btn-sm btn-ghost button-link" data-open-hit="${hit.id}">Details ↗</button></div>
+      <div class="result-actions"><div class="amenities">${hit.amenities.map((item) => `<button type="button" class="badge badge-ghost badge-sm hit-chip" aria-label="Filter by ${escapeHtml(label(item))}" data-hit-filter="amenities" data-value="${escapeHtml(item)}">${label(item)}</button>`).join('')}</div><button type="button" class="btn btn-sm btn-ghost button-link" data-open-hit="${hit.id}">Details ↗</button></div>
     </article>
   `;
 }
@@ -51,11 +51,6 @@ export function renderResults() {
         <h2>Homes <span class="result-total">${response.totalHits}</span></h2>
         ${renderRefinements()}
         <div class="result-tools">${response.mapHits?.length ? `<button class="btn btn-sm btn-outline mobile-view-toggle" id="mobile-view-toggle" aria-controls="results-workspace" aria-pressed="${state.mobileResultsView === 'map'}" aria-label="${state.mobileResultsView === 'map' ? 'Show list' : 'Show map'}">${state.mobileResultsView === 'map' ? 'List' : 'Map'}</button>` : ''}<button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button>
-          <details class="result-info" id="result-info"><summary id="result-info-toggle" aria-label="Search result information">ⓘ</summary><div class="result-info-content">
-            <p class="stats">${response.totalHits} hits from ${response.providerLabel} in ${response.processingTimeMs} ms</p>
-            <p class="confidence-note">${state.request.mode === 'keyword' ? 'Keyword relevance' : state.request.mode === 'semantic' ? 'Semantic similarity' : 'Hybrid relevance'} scores are ordering signals, not confidence percentages.</p>
-            <div class="virtual-summary stats" data-virtual-summary></div>
-          </div></details>
         </div>
       </div>
       ${(response.debug?.warnings || []).map((warning) => `<p class="notice execution-warning">${escapeHtml(warning)}</p>`).join('')}

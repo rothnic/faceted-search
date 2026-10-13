@@ -16,6 +16,15 @@ for (const width of [390,320]) {
     await expect(list).toBeHidden();
     await expect(page.locator('#result-map')).toBeVisible();
     await expect(page.locator('#result-map')).toHaveAttribute('data-map-state','ready');
+    await expect(page.locator('.map-head')).toHaveCount(0);
+    const keyBox=(await page.locator('.map-key > summary').boundingBox())!;
+    const attributionBox=(await page.locator('.leaflet-control-attribution').boundingBox())!;
+    expect(keyBox.y+keyBox.height).toBeLessThan(attributionBox.y);
+    await page.locator('.map-key > summary').click();
+    await expect(page.locator('.map-legend')).toBeVisible();
+    await page.locator('.map-key > summary').click();
+    const marker=page.locator('.leaflet-interactive').first();
+    expect(await marker.evaluate(e=>getComputedStyle(e).fill)).toMatch(/^rgb\((18, 113, 92|69, 138, 121|54, 95, 112|36, 72, 59|114, 116, 70)\)$/);
     await expect(page.locator('.listing-column .result').first()).not.toBeInViewport();
     const currentTiles = () => page.locator('.leaflet-tile').evaluateAll(es=>{
       const urls=es.map(e=>(e as HTMLImageElement).src).filter(s=>s.startsWith('https://tile.openstreetmap.org/'));

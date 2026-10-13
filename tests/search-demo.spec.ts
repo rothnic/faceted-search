@@ -57,7 +57,7 @@ test('provider switcher keeps the same UI while changing debug payloads', async 
   ]) {
     await page.getByLabel('Provider', {exact:true}).selectOption(value);
     await expect(page.locator('#result-info .stats').first()).toContainText(label);
-    await page.locator('#result-info-toggle').click();
+    if (await page.locator('#system-info').getAttribute('open') === null) await page.locator('#system-info-toggle').click();
     await expect(page.locator('.stats', { hasText: label })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Quiet cul-de-sac home/i })).toBeVisible();
   }

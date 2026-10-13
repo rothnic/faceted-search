@@ -205,6 +205,8 @@ test('status polling preserves keyboard focus on disclosure, schema links and se
   await page.clock.fastForward(11000);
   await expect.poll(() => snapshots).toBeGreaterThan(previous);
   await expect(searchLink).toBeFocused();
+  await expect(page.locator('#system-info')).toHaveAttribute('open','');
+  await expect(page.locator('#result-info [data-virtual-summary]')).toBeVisible();
   await page.locator('#diagnostics-toggle').click();
   const backfill = page.locator('#debug-backfill-meili');
   await backfill.focus(); previous = snapshots;

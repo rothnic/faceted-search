@@ -13,7 +13,7 @@ import { renderFilters, renderToolbar } from './search/filters.js';
 import { closeHitDetails, openHitDetails, syncHitDialog } from './search/hit-dialog.js';
 import { renderLeafletMap, resizeVisibleMap } from './search/map.js';
 import { renderDebug, renderResults } from './search/results.js';
-import { refreshStatus } from './system-status.js';
+import { refreshStatus, updateSystemStrip } from './system-status.js';
 import { setupVirtualizedResults } from './search/virtual-results.js';
 
 let searchDelegatesWired = false;
@@ -423,6 +423,7 @@ function renderSearchPage() {
     }
   }
   updateToolbarControls();
+  updateSystemStrip();
   setHtmlPreservingFocus(document.querySelector('#search-filters'), renderFilters());
   document.querySelector('#search-results').innerHTML = renderResults();
   setHtmlPreservingFocus(document.querySelector('#search-debug'), renderDebug(requestBody));

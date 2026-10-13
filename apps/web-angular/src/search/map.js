@@ -14,12 +14,7 @@ export function renderResultMap() {
   const legendTypes = [...new Set(hitsForMap.map((hit) => hit.propertyType))];
   return `
     <section class="result-map" aria-label="Map of visible results">
-      <div class="map-head">
-        <div>
-          <strong>Map</strong>
-          <details class="map-key"><summary>Map key</summary><div class="map-legend" aria-label="Map marker legend">${legendTypes.map((type) => { const style = propertyTypeStyle(type); return `<span><i style="background:${style.color}"></i>${escapeHtml(style.label)}</span>`; }).join('')}</div></details>
-        </div>
-      </div>
+      <details class="map-key"><summary>Map key</summary><div class="map-legend" aria-label="Map marker legend">${legendTypes.map((type) => { const style = propertyTypeStyle(type); return `<span><i style="background:${style.color}"></i>${escapeHtml(style.label)}</span>`; }).join('')}</div></details>
       <div id="result-map" data-map-state="loading" class="leaflet-result-map" role="img" aria-label="Interactive map of matching search results"></div>
       <p class="map-feedback" role="status" data-state="loading">Loading map tiles…</p>
     </section>
@@ -85,6 +80,8 @@ export function renderLeafletMap() {
       fillColor: style.color,
       fillOpacity: 0.88
     })
+      .on('popupopen', (event) => event.target.setStyle({radius:7,weight:3,color:'#ffffff',fillOpacity:1}))
+      .on('popupclose', (event) => event.target.setStyle({radius:4.75,weight:1.5,color:'#ffffff',fillOpacity:.88}))
       .bindPopup(`
         <strong>${escapeHtml(hit.title)}</strong><br />
         ${currency(hit.price)} · ${escapeHtml(style.label)}<br />

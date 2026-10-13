@@ -18,13 +18,22 @@ export function modelProgress(model) {
     <span>${e(progress?.file || 'Preparing local inference runtime')}${measured ? ` · ${Math.round(progress.loaded / progress.total * 100)}% of this file` : ' · total progress unknown'}</span></div>`;
 }
 
+function renderSearchInformation() {
+  const response = state.response;
+  if (!response) return '';
+  const ranking = state.request.mode === 'keyword' ? 'Keyword relevance' : state.request.mode === 'semantic' ? 'Semantic similarity' : 'Hybrid relevance';
+  return `<div id="result-info"><p class="stats">${response.totalHits} hits from ${e(response.providerLabel)} in ${response.processingTimeMs} ms</p>
+    <p class="confidence-note">${ranking} scores are ordering signals, not confidence percentages.</p>
+    <div class="virtual-summary stats" data-virtual-summary>${response.hits.length} of ${response.totalHits} listings loaded.</div></div>`;
+}
+
 export function renderSystemStrip() {
-  return `<details class="system-info" id="system-info"><summary id="system-info-toggle">System info${state.embeddingError || state.syncError || state.embeddingJobsError ? ' · attention' : ''}</summary><div class="system-info-content"><div class="system-strip" aria-label="System summary">
+  return `<details class="system-info" id="system-info"><summary id="system-info-toggle" aria-label="Search and system information">Search info${state.embeddingError || state.syncError || state.embeddingJobsError ? ' · attention' : ''}</summary><div class="system-info-content"><div class="system-strip" aria-label="System summary">
     <a id="summary-system-link" href="/system" class="status-badge">${storageLabel()}</a>
     <span>${e(embeddingLabel())}</span>
     <span>${state.syncError ? 'Sync status unavailable' : state.sync ? `${state.sync.outboxPendingCount} pending sync events${state.storageMode === 'memory' ? ' (simulated)' : ''}` : 'Sync status not checked'}</span>
     <a id="summary-schema-link" href="/schema">Inspect schema</a>
-  </div>${modelProgress(state.embeddings)}</div></details>`;
+  </div>${modelProgress(state.embeddings)}${renderSearchInformation()}</div></details>`;
 }
 
 export function updateSystemStrip() {
