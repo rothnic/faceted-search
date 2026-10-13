@@ -140,7 +140,7 @@ test('mobile navigation and filter disclosure are usable without page overflow',
   await expect(page.locator('.refinement-pill')).not.toHaveCount(0);
   await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
   await expect(page.locator('.refinement-pill')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Show or hide filters' }).click();
+  await page.getByRole('button', { name: 'Show results', exact: true }).click();
   await expect(page.locator('#search-filters')).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('link', { name: 'Schema', exact: true }).click();

@@ -3,7 +3,7 @@
 @import 'tailwindcss';
 @plugin 'daisyui' {
   themes: false;
-  include: button, input, select, checkbox, badge, card, tooltip;
+  include: button, input, select, checkbox, badge, card, tooltip, drawer, fieldset, rootscrolllock, rootscrollgutter;
   logs: false;
 }
 @plugin 'daisyui/theme' {
@@ -91,7 +91,7 @@ label,.label { font-size:10px; color:var(--muted); font-weight:650; text-transfo
 .results-panel { min-width:0; }.results-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
 .results-head h2 { margin:0 0 3px; font-size:21px; font-weight:650; letter-spacing:-.5px; }.result-total { font-size:12px; padding:3px 7px; margin-left:5px; background:#e5eee8; color:var(--accent-dark); border-radius:6px; vertical-align:middle; }
 .stats { color:var(--muted); font-size:11px; }.results-head .stats { font-size:11px; }
-#save-search { background:var(--accent); color:white; border-color:var(--accent); padding:0 14px; min-height:34px; height:34px; font-size:12px; }
+#save-search { background:var(--accent); color:white; border-color:var(--accent); padding:0 14px; font-size:12px; }
 .refinements { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }.refinement-pill { cursor:pointer; min-height:28px; height:auto; gap:6px; font-size:11px; }
 .ranking-note { margin:0 0 14px; }.ranking-note summary { padding:0; font-size:10px; color:var(--muted); cursor:pointer; }.ranking-note p { margin:8px 0; font-size:11px; }
 .results-workspace { display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:18px; align-items:start; }.listing-column,.map-column { min-width:0; }
@@ -370,3 +370,43 @@ h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
 .toolbar .search-field > label.search-accessible-label { position:absolute; width:1px; height:1px; min-height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .toolbar .search-field { align-self:end; grid-template-rows:42px; gap:0; }
 @media(max-width:760px) { .toolbar .search-field { grid-template-rows:44px; } }
+
+/* Standard responsive Drawer keeps one filter form and search state. */
+.search-drawer { grid-template-columns:242px minmax(0,1fr); align-items:start; }
+#search-filters.drawer-side { display:block; z-index:1200; transition:opacity .2s ease; }
+#filter-panel-content { width:242px; min-width:0; }
+#search-filters.drawer-side .panel { position:static; margin:0; }
+#search-filters.drawer-side { top:76px; height:auto; max-height:calc(100dvh - 90px); }
+#filter-panel-content .fieldset { min-width:0; border-inline:0; border-top:0; gap:0; }
+#filter-panel-content .fieldset-legend { width:100%; padding:0; margin:0 0 8px; font-size:11px; font-weight:650; }
+#filter-panel-content .range-section,#filter-panel-content .geo-section { border:0; margin:14px 0 0; padding:0; }
+#filter-panel-content .facet-group { padding:12px 0; }
+@media(min-width:761px) and (max-width:1120px) {
+ .search-drawer { grid-template-columns:210px minmax(0,1fr); }
+ #filter-panel-content { width:210px; }
+}
+@media(max-width:760px) {
+ .search-drawer { display:grid; grid-template-columns:minmax(0,1fr); }
+ .search-drawer > .drawer-content { grid-column:1; }
+ #search-filters.drawer-side { display:grid; position:fixed; inset:0; height:100dvh; max-height:none; z-index:2000; }
+ #filter-panel-content { width:min(340px,calc(100vw - 36px)); height:100dvh; }
+ #search-filters.drawer-side .panel { height:100%; max-height:100%; overflow:auto; padding:16px; border-radius:0 8px 8px 0; padding-bottom:max(16px,env(safe-area-inset-bottom)); }
+ #filter-panel-content .facet-option { min-height:40px; align-items:center; }
+ #filter-panel-content #clear-filters,#filter-panel-content .link-button { min-height:44px; height:44px; }
+ #filter-panel-content .field input { min-height:44px; }
+}
+
+.result-tools > .btn { min-height:44px; height:44px; padding:0 14px; font-size:12px; line-height:1; font-weight:600; }
+.result-tools .mobile-view-toggle { border-color:transparent; background:transparent; color:var(--accent-dark); box-shadow:none; }
+
+/* One spacing rhythm replaces accumulated grid gaps plus child margins. */
+.result { gap:10px; }
+.result > .result-topline,.result > h3,.result > .result-location,.result > .property-facts,.result > .result-description { margin:0; }
+@media(max-width:760px) { .results-head { row-gap:2px; margin-bottom:8px; } }
+@media(max-width:760px) { .search-drawer:has(> .drawer-toggle:checked) { z-index:3000; } }
+
+.filter-heading-actions { display:flex; align-items:center; gap:10px; }
+@media(max-width:760px) {
+ #filter-panel-content .filter-heading { gap:8px; margin-bottom:12px; }
+ #filter-panel-content .close-filter-panel { width:auto; margin:0; padding:0 10px; min-height:44px; height:44px; font-size:11px; white-space:nowrap; }
+}

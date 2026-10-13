@@ -116,6 +116,11 @@ async function main() {
   await waitForSearchReady(page);
   await capture(page, `${outputDir}/mobile-search.png`);
   await recordLayout(page);
+  await page.locator('#toggle-filters').click();
+  await page.getByRole('dialog',{name:'Filters',exact:true}).waitFor();
+  await page.locator('#filter-panel-content').evaluate(element => Promise.all(element.getAnimations({subtree:true}).map(animation => animation.finished)));
+  await capture(page, `${outputDir}/mobile-filters.png`);
+  await page.locator('#close-filter-panel').click();
   const mobileUrl = page.url();
   await page.getByRole('button', {name:'Show map',exact:true}).click();
   await waitForMapTiles(page);

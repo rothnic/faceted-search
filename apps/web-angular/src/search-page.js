@@ -10,6 +10,7 @@ import {
   syncUrl
 } from './core.js';
 import { renderFilters, renderToolbar } from './search/filters.js';
+import { handleFilterDrawerKey, setFilterDrawer, syncFilterDrawer } from './search/filter-drawer.js';
 import { closeHitDetails, openHitDetails, syncHitDialog } from './search/hit-dialog.js';
 import { renderLeafletMap, resizeVisibleMap } from './search/map.js';
 import { renderDebug, renderResults } from './search/results.js';
@@ -319,10 +320,7 @@ function wireSearchDelegates() {
       if (target.id === 'retry-saved') return loadSavedSearches();
       if (target.id === 'keyword-recovery') { state.request.mode = 'keyword'; return runSearch(); }
       if (target.id === 'close-filter-panel') {
-        document.querySelector('#search-filters').classList.remove('mobile-open');
-        const toggle = document.querySelector('#toggle-filters');
-        toggle?.setAttribute('aria-expanded', 'false');
-        toggle?.focus();
+        setFilterDrawer(false);
         return;
       }
       if (target.id === 'mobile-view-toggle') {
@@ -342,8 +340,7 @@ function wireSearchDelegates() {
       }
       if (target.id === 'toggle-filters') {
         const visible = target.getAttribute('aria-expanded') !== 'true';
-        target.setAttribute('aria-expanded', String(visible));
-        document.querySelector('#search-filters').classList.toggle('mobile-open', visible);
+        setFilterDrawer(visible);
         return;
       }
       if (target.id === 'prev-page') {
@@ -390,6 +387,7 @@ function wireSearchDelegates() {
     } catch (error) { state.operationError = error.message; renderSearchPage(); }
   });
   app.addEventListener('keydown', (event) => {
+    if (handleFilterDrawerKey(event)) return;
     if (event.key === 'Escape') {
       updateSearchSuggestions(false);
       const disclosure = event.target.closest?.('.system-info[open], .result-info[open]');
@@ -409,22 +407,30 @@ function renderSearchPage() {
   if (!document.querySelector('#search-filters')) {
     app.innerHTML = `
       ${renderToolbar()}
-      <div class="layout">
-        <div id="search-filters"></div>
-        <div id="search-results"></div>
+      <div id="filter-drawer" class="layout search-drawer drawer">
+        <input id="filter-drawer-toggle" class="drawer-toggle" type="checkbox" tabindex="-1" aria-hidden="true" />
+        <div id="search-results" class="drawer-content"></div>
+        <div id="search-filters" class="drawer-side">
+          <label class="drawer-overlay" for="filter-drawer-toggle" aria-label="Close filters"></label>
+          <div id="filter-panel-content"></div>
+        </div>
       </div>
       <div id="search-debug"></div>
     `;
+    document.querySelector('#filter-drawer-toggle').addEventListener('change', () => setFilterDrawer(document.querySelector('#filter-drawer-toggle').checked));
     wireSearchToolbar();
     wireSearchDelegates();
     if (!mapResizeBound) {
-      window.matchMedia('(max-width:760px)').addEventListener('change', () => requestAnimationFrame(resizeVisibleMap));
+      window.matchMedia('(max-width:760px)').addEventListener('change', () => { setFilterDrawer(false, false); requestAnimationFrame(resizeVisibleMap); });
       mapResizeBound = true;
     }
   }
   updateToolbarControls();
   updateSystemStrip();
-  setHtmlPreservingFocus(document.querySelector('#search-filters'), renderFilters());
+  const filterScroll = document.querySelector('#filter-panel-content .panel')?.scrollTop || 0;
+  setHtmlPreservingFocus(document.querySelector('#filter-panel-content'), renderFilters());
+  document.querySelector('#filter-panel-content .panel').scrollTop = filterScroll;
+  syncFilterDrawer();
   document.querySelector('#search-results').innerHTML = renderResults();
   setHtmlPreservingFocus(document.querySelector('#search-debug'), renderDebug(requestBody));
   syncHitDialog();

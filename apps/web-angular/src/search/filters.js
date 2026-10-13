@@ -46,20 +46,20 @@ function renderFacetGroup(title, key) {
   const visibleBuckets = orderedBuckets.slice(0, visibleLimit);
   const hasOverflow = orderedBuckets.length > FACET_VISIBLE_LIMIT;
   return `
-    <div class="facet-group" data-facet="${key}">
-      <div class="facet-title">
+    <fieldset class="fieldset facet-group" data-facet="${key}">
+      <legend class="fieldset-legend facet-title">
         <strong>${title}</strong>
         ${orderedBuckets.length ? `<span class="stats">${orderedBuckets.length}</span>` : ''}
-      </div>
+      </legend>
       ${visibleBuckets.map((bucket) => `
         <label class="facet-option">
-          <input class="checkbox checkbox-sm" type="checkbox" data-filter="${key}" value="${bucket.value}" ${selected.has(String(bucket.value)) ? 'checked' : ''} />
+          <input class="checkbox checkbox-sm" type="checkbox" id="facet-${encodeURIComponent(key)}-${encodeURIComponent(String(bucket.value))}" data-filter="${key}" value="${escapeHtml(bucket.value)}" ${selected.has(String(bucket.value)) ? 'checked' : ''} />
           <span>${label(bucket.value)}</span>
           <span class="count">${bucket.count}</span>
         </label>
       `).join('') || '<span class="stats">No facet values</span>'}
       ${hasOverflow ? `<button type="button" class="btn btn-sm link-button" data-toggle-facet="${key}">${state.expandedFacets[key] ? 'Show fewer' : `Show ${orderedBuckets.length - visibleBuckets.length} more`}</button>` : ''}
-    </div>
+    </fieldset>
   `;
 }
 
@@ -67,19 +67,19 @@ export function renderFilters() {
   const savedIds = new Set(state.request.savedSearchIds || []);
   return `
     <aside class="panel">
-      <div class="filter-heading"><h2>Filters</h2>
-      <button class="btn btn-sm btn-ghost" type="button" id="clear-filters" aria-label="Clear filters">Clear</button></div>
-      <button class="btn btn-sm btn-outline close-filter-panel" id="close-filter-panel" type="button" aria-controls="search-filters">Show results</button>
+      <div class="filter-heading"><h2 id="filter-panel-title">Filters</h2>
+      <div class="filter-heading-actions"><button class="btn btn-sm btn-ghost" type="button" id="clear-filters" aria-label="Clear filters">Clear</button>
+      <button class="btn btn-sm btn-primary close-filter-panel" id="close-filter-panel" type="button" aria-controls="search-filters">Show results</button></div></div>
       <div class="mobile-provider-controls">
         <div class="field"><label for="mobile-provider">Search provider</label><select class="select" id="mobile-provider">${state.providers.map((item) => `<option value="${item.id}" ${item.id === state.request.provider ? 'selected' : ''}>${escapeHtml(providerControlLabel(item))}</option>`).join('')}</select></div>
         <div class="field"><label for="mobile-mode">Search mode</label><select class="select" id="mobile-mode">${['keyword','semantic','hybrid'].map((mode) => `<option value="${mode}" ${state.request.mode === mode ? 'selected' : ''}>${label(mode)}</option>`).join('')}</select></div>
       </div>
       <hr />
-      <div class="facet-group" data-facet="saved-searches">
-        <div class="facet-title">
+      <fieldset class="fieldset facet-group" data-facet="saved-searches">
+        <legend class="fieldset-legend facet-title">
           <strong>Saved Searches</strong>
           ${savedIds.size && state.response ? `<span class="stats">${state.response.totalHits} matches</span>` : ''}
-        </div>
+        </legend>
         ${state.savedSearches.map((search) => `
           <label class="facet-option">
             <input class="checkbox checkbox-sm" type="checkbox" id="saved-filter-${escapeHtml(search.id)}" data-saved-search="${escapeHtml(search.id)}" ${savedIds.has(search.id) ? 'checked' : ''} />
@@ -89,7 +89,7 @@ export function renderFilters() {
         `).join('') || `<span class="stats">${state.savedSearchesLoading ? 'Evaluating saved searches…' : state.savedSearchesError ? 'Saved searches unavailable' : 'No saved searches yet'}</span>`}
         ${state.savedSearchesError ? `<p class="notice error">${escapeHtml(state.savedSearchesError)}</p><button class="btn btn-sm btn-outline" id="retry-saved">Retry saved searches</button>` : ''}
         ${savedIds.size > 1 ? '<span class="stats">Selected saved searches are ORed together.</span>' : ''}
-      </div>
+      </fieldset>
       ${renderFacetGroup('City', 'city')}
       ${renderFacetGroup('Neighborhood', 'neighborhood')}
       ${renderFacetGroup('School district', 'schoolDistrict')}
@@ -97,16 +97,17 @@ export function renderFilters() {
       ${renderFacetGroup('Bedrooms', 'bedrooms')}
       ${renderFacetGroup('Amenities', 'amenities')}
       ${renderFacetGroup('Listing status', 'listingStatus')}
-      <h3>Ranges</h3>
+      <fieldset class="fieldset range-section"><legend class="fieldset-legend">Ranges</legend>
       <div class="range-grid">
-        <div class="field"><label>Min price</label><input class="input input-sm" data-range="minPrice" type="number" value="${state.request.filters.minPrice || ''}" /></div>
-        <div class="field"><label>Max price</label><input class="input input-sm" data-range="maxPrice" type="number" value="${state.request.filters.maxPrice || ''}" /></div>
-        <div class="field"><label>Min sqft</label><input class="input input-sm" data-range="minSquareFeet" type="number" value="${state.request.filters.minSquareFeet || ''}" /></div>
-        <div class="field"><label>Min lot acres</label><input class="input input-sm" data-range="minLotSize" type="number" step="0.1" value="${state.request.filters.minLotSize || ''}" /></div>
-        <div class="field"><label>Min year</label><input class="input input-sm" data-range="minYearBuilt" type="number" value="${state.request.filters.minYearBuilt || ''}" /></div>
-        <div class="field"><label>Max year</label><input class="input input-sm" data-range="maxYearBuilt" type="number" value="${state.request.filters.maxYearBuilt || ''}" /></div>
+        <div class="field"><label for="range-minPrice">Min price</label><input id="range-minPrice" class="input input-sm" data-range="minPrice" type="number" value="${state.request.filters.minPrice || ''}" /></div>
+        <div class="field"><label for="range-maxPrice">Max price</label><input id="range-maxPrice" class="input input-sm" data-range="maxPrice" type="number" value="${state.request.filters.maxPrice || ''}" /></div>
+        <div class="field"><label for="range-minSquareFeet">Min sqft</label><input id="range-minSquareFeet" class="input input-sm" data-range="minSquareFeet" type="number" value="${state.request.filters.minSquareFeet || ''}" /></div>
+        <div class="field"><label for="range-minLotSize">Min lot acres</label><input id="range-minLotSize" class="input input-sm" data-range="minLotSize" type="number" step="0.1" value="${state.request.filters.minLotSize || ''}" /></div>
+        <div class="field"><label for="range-minYearBuilt">Min year</label><input id="range-minYearBuilt" class="input input-sm" data-range="minYearBuilt" type="number" value="${state.request.filters.minYearBuilt || ''}" /></div>
+        <div class="field"><label for="range-maxYearBuilt">Max year</label><input id="range-maxYearBuilt" class="input input-sm" data-range="maxYearBuilt" type="number" value="${state.request.filters.maxYearBuilt || ''}" /></div>
       </div>
-      <h3>Geo</h3>
+      </fieldset>
+      <fieldset class="fieldset geo-section"><legend class="fieldset-legend">Location</legend>
       <div class="geo-grid">
         <button class="btn btn-sm btn-outline" type="button" data-geo="huntsville">5 mi Huntsville</button>
         <button class="btn btn-sm btn-outline" type="button" data-geo="madison">10 mi Madison</button>
@@ -118,6 +119,7 @@ export function renderFilters() {
         <span>Inside map viewport</span>
         <span></span>
       </label>
+      </fieldset>
     </aside>
   `;
 }

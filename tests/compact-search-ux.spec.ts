@@ -33,7 +33,7 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
     const geometry = await page.evaluate(() => {
       const cards = [...document.querySelectorAll('.result')].map((card) => card.getBoundingClientRect());
       const warningHeight = [...document.querySelectorAll('.execution-warning')].reduce((height,element) => height + element.getBoundingClientRect().height + parseFloat(getComputedStyle(element).marginBottom), 0);
-      return {firstResultY:cards[0].y,warningHeight,controlsAndResultsY:cards[0].y-warningHeight,fullyVisible:cards.filter((r)=>r.y>=0&&r.bottom<=innerHeight).length,partiallyVisible:cards.filter((r)=>r.y<innerHeight&&r.bottom>0).length,overflow:document.documentElement.scrollWidth>innerWidth};
+      return {firstResultY:cards[0].y,firstResultHeight:cards[0].height,firstResultBottom:cards[0].bottom,warningHeight,controlsAndResultsY:cards[0].y-warningHeight,fullyVisible:cards.filter((r)=>r.y>=0&&r.bottom<=innerHeight).length,partiallyVisible:cards.filter((r)=>r.y<innerHeight&&r.bottom>0).length,overflow:document.documentElement.scrollWidth>innerWidth};
     });
     console.log('COMPACT_LAYOUT',viewport,geometry);
     // Execution warnings must remain visible; their content/line wrapping is data-dependent.
@@ -54,6 +54,9 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       expect(Math.abs(filterBox.y-sortBox.y)).toBeLessThan(1);
       expect(filterBox.x).toBeGreaterThan(sortBox.x);
       expect(filterBox.width).toBeLessThan(130);
+      const resultButtons=await page.locator('#mobile-view-toggle,#save-search').evaluateAll(es=>es.map(e=>({height:e.getBoundingClientRect().height,y:e.getBoundingClientRect().y,font:getComputedStyle(e).fontSize,padding:getComputedStyle(e).paddingInlineStart})));
+      expect(resultButtons[0]).toEqual(resultButtons[1]);
+      expect(resultButtons[0].height).toBe(44);
       const chipPaint=await page.locator('.refinement-pill > .badge,.hit-chip > .badge').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().height));
       expect(Math.max(...chipPaint)).toBeLessThanOrEqual(24);
       await expect(page.locator('#result-info-toggle')).toHaveCount(0);
