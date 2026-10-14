@@ -1,4 +1,4 @@
-name: Screenshots
+name: Internal UI mechanics (fixture mode)
 
 on:
   push:
@@ -9,6 +9,8 @@ on:
 jobs:
   screenshots:
     runs-on: ubuntu-latest
+    env:
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     steps:
       - uses: actions/checkout@v4
 
@@ -18,9 +20,25 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run screenshots:update
-      - uses: actions/upload-artifact@v4
+      - run: npm run typecheck
+      # Explicit internal fixture tests; real comparison screenshots live in native-embeddings.yml.
+      - uses: actions/cache/restore@v4
+        id: cpu-model
         with:
-          name: screenshots
-          path: docs/screenshots/*.png
+          path: data/models
+          key: cpu-minilm-751bff37-linux-x64-v1
+      - run: npm run verify:embeddings
+      - uses: actions/cache/save@v4
+        if: steps.cpu-model.outputs.cache-hit != 'true'
+        with:
+          path: data/models
+          key: cpu-minilm-751bff37-linux-x64-v1
+      - run: npx playwright install --with-deps chromium
+      - name: Local browser regressions (real services excluded)
+        run: npx playwright test --workers=1 --grep-invert @real-services
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: map-readiness-diagnostics
+          path: test-results/map-readiness*
+          if-no-files-found: ignore

@@ -73,6 +73,8 @@ export async function renderInstant(providerId) {
           <p class="stats">Bundled with Vite using InstantSearch.js widgets and ${adapterLabel}: searchBox, refinementList, rangeInput, currentRefinements, clearRefinements, hits, stats, and pagination.</p>
         </div>
       </div>
+      <p class="notice">This page connects directly to a separate local ${providerId === 'typesense' ? 'Typesense server on port 8108' : 'Meilisearch server on port 7700'}. It does not use the in-memory fallback or local CPU semantic runtime.</p>
+      <div id="instant-feedback" role="status">Connecting to the search engine…</div>
       <div class="instant-grid">
         <aside class="panel instant-panel">
           <div id="instant-searchbox"></div>
@@ -137,5 +139,14 @@ export async function renderInstant(providerId) {
     }),
     pagination({ container: '#instant-pagination' })
   ]);
+  const feedback = document.querySelector('#instant-feedback');
+  search.on('error', (error) => {
+    feedback.setAttribute('role', 'alert');
+    feedback.innerHTML = `<p class="notice error">Direct search engine unavailable: ${escapeHtml(error.message || 'Connection failed')}. Start and backfill the real service, then retry.</p><button class="btn btn-sm btn-outline" id="retry-instant">Retry direct search</button> <a href="/search?mode=keyword">Use the main search</a>`;
+    document.querySelector('#retry-instant').onclick = () => { feedback.setAttribute('role', 'status'); feedback.textContent = 'Retrying direct search…'; search.refresh(); };
+  });
+  search.on('render', () => {
+    if (search.status === 'idle') { feedback.setAttribute('role', 'status'); feedback.textContent = 'Direct engine response received. This page uses the external index.'; }
+  });
   search.start();
 }

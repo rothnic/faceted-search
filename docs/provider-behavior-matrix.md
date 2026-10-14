@@ -1,5 +1,7 @@
 # Provider Behavior Matrix
 
+This table describes production provider capabilities. The runnable POC uses [real local CPU embeddings](cpu-embeddings.md) for semantic/hybrid mode across all four selections; it does not configure these provider-native vector indexes.
+
 | Feature | Native PostgreSQL | `pg_search` | Meilisearch | Typesense |
 | --- | --- | --- | --- | --- |
 | Keyword search | `tsvector` | BM25 extension | Built in | Built in |

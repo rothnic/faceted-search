@@ -6,68 +6,160 @@ import {
   state
 } from '../core.js';
 
+let readinessTimer;
+
 export function renderResultMap() {
   const hitsForMap = state.response?.mapHits || [];
   if (!hitsForMap.length) return '';
   const legendTypes = [...new Set(hitsForMap.map((hit) => hit.propertyType))];
   return `
     <section class="result-map" aria-label="Map of visible results">
-      <div class="map-head">
-        <div>
-          <strong>Map</strong>
-          <span class="stats">${hitsForMap.length} matching listings</span>
-        </div>
-        <div class="map-legend" aria-label="Map marker legend">
-          ${legendTypes.map((type) => {
-            const style = propertyTypeStyle(type);
-            return `<span><i style="background:${style.color}"></i>${escapeHtml(style.label)}</span>`;
-          }).join('')}
-        </div>
-      </div>
-      <div id="result-map" class="leaflet-result-map" role="img" aria-label="Interactive map of matching search results"></div>
+      <details class="map-key"><summary>Map key</summary><div class="map-legend" aria-label="Map marker legend">${legendTypes.map((type) => { const style = propertyTypeStyle(type); return `<span><i style="background:${style.color}"></i>${escapeHtml(style.label)}</span>`; }).join('')}</div></details>
+      <div id="result-map" data-map-state="loading" class="leaflet-result-map" role="region" aria-label="Interactive map of matching search results"></div>
+      <p class="map-feedback" role="status" data-state="loading">Loading map tiles…</p>
     </section>
   `;
 }
 
 export function renderLeafletMap() {
+  clearTimeout(readinessTimer);
   const mapElement = document.querySelector('#result-map');
   if (state.resultMap) {
     state.resultMap.remove();
     state.resultMap = null;
   }
-  if (!mapElement || !state.response?.mapHits?.length) return;
+  if (!mapElement || !state.response?.mapHits?.length || !mapElement.getClientRects().length) return;
 
   const map = L.map(mapElement, {
     scrollWheelZoom: false,
+    fadeAnimation: false,
     zoomControl: true
   });
   state.resultMap = map;
 
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  }).addTo(map);
+  });
+  const feedback = mapElement.parentElement.querySelector('.map-feedback');
+  const updateReadiness = (timedOut = false) => {
+    if (state.resultMap !== map) return;
+    const images = [...mapElement.querySelectorAll('.leaflet-tile-container img')];
+    const loaded = images.filter((tile) => tile.complete && tile.naturalWidth > 0).length;
+    const failed = images.filter((tile) => tile.dataset.failed === 'true').length;
+    const ready = images.length > 0 && loaded === images.length && !tiles.isLoading();
+    const status = ready ? 'ready' : failed || timedOut ? 'error' : 'loading';
+    mapElement.dataset.mapState = status;
+    mapElement.dataset.tilesLoaded = String(loaded);
+    mapElement.dataset.tilesTotal = String(images.length);
+    mapElement.dataset.tilesFailed = String(failed);
+    feedback.dataset.state = status;
+    feedback.textContent = ready ? 'OpenStreetMap · Live map tiles loaded' : status === 'error'
+      ? `Map tiles unavailable (${loaded}/${images.length} loaded). Listing markers remain available. Check your connection or try refreshing.`
+      : 'Loading map tiles…';
+    if (ready) clearTimeout(readinessTimer);
+  };
+  tiles.on('loading', () => {
+    clearTimeout(readinessTimer);
+    readinessTimer = setTimeout(() => updateReadiness(true), 15000);
+    updateReadiness();
+  });
+  tiles.on('tileerror', (event) => { event.tile.dataset.failed = 'true'; updateReadiness(); });
+  tiles.on('tileload load', () => updateReadiness());
+  tiles.addTo(map);
 
+  let activeMarker;
+  const previewWidth = () => Math.max(160, Math.min(280, map.getSize().x - 34));
+  const resizePreview = (popup) => {
+    const width = previewWidth();
+    if (popup.options.maxWidth === width) return;
+    const content = popup.getElement()?.querySelector('.map-listing-preview');
+    const focused = content?.contains(document.activeElement) ? document.activeElement : null;
+    L.setOptions(popup, {maxWidth:width,minWidth:Math.min(220,width)});
+    // Keep the existing controls/listeners when Leaflet recalculates its content box.
+    popup.setContent(content || popup.getContent());
+    focused?.focus({preventScroll:true});
+  };
+  map.on('resize', () => { if (activeMarker?.isPopupOpen()) resizePreview(activeMarker.getPopup()); });
+  const dismissOutside = (event) => {
+    if (activeMarker && !activeMarker.getPopup()?.getElement()?.contains(event.target) && event.target !== activeMarker.getElement()) map.closePopup();
+  };
+  document.addEventListener('pointerdown', dismissOutside);
+  map.on('unload', () => document.removeEventListener('pointerdown', dismissOutside));
+  mapElement.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      const marker = activeMarker;
+      map.closePopup(); marker?.getElement()?.focus();
+      map.eachLayer((layer) => layer.closeTooltip?.());
+      event.preventDefault(); event.stopPropagation();
+    }
+  });
   const bounds = [];
   for (const hit of state.response.mapHits) {
     const point = [hit.lat, hit.lng];
     const style = propertyTypeStyle(hit.propertyType);
     bounds.push(point);
-    L.circleMarker(point, {
+    const marker = L.circleMarker(point, {
       radius: 4.75,
       color: '#ffffff',
       weight: 1.5,
       fillColor: style.color,
       fillOpacity: 0.88
     })
-      .bindPopup(`
-        <strong>${escapeHtml(hit.title)}</strong><br />
-        ${currency(hit.price)} · ${escapeHtml(style.label)}<br />
-        ${escapeHtml(hit.city)}${hit.neighborhood ? `, ${escapeHtml(hit.neighborhood)}` : ''}
-      `)
-      .addTo(map);
+      .bindTooltip(`<div class="tooltip-content"><strong>${currency(hit.price)}</strong><br>${escapeHtml(hit.title)}</div>`, {
+        direction:'auto', offset:[8,0], opacity:1, className:'tooltip tooltip-open tooltip-primary map-hover-tooltip'
+      })
+      .bindPopup(`<article class="card map-listing-preview" role="dialog" aria-label="Listing preview: ${escapeHtml(hit.title)}">
+        <div class="card-body"><button type="button" class="btn btn-ghost preview-close" aria-label="Close listing preview">×</button>
+        <strong class="preview-price">${currency(hit.price)}</strong><h3>${escapeHtml(hit.title)}</h3>
+        <p>${escapeHtml(hit.city)} · ${escapeHtml(style.label)}</p>
+        <button type="button" class="btn btn-primary btn-sm" data-open-hit="${escapeHtml(hit.id)}">Details</button></div>
+      </article>`, {closeButton:false, maxWidth:previewWidth(), minWidth:Math.min(220,previewWidth()), autoPanPadding:[16,16]})
+      .on('popupopen', () => {
+        activeMarker = marker;
+        resizePreview(marker.getPopup());
+        marker.closeTooltip();
+        marker.setStyle({radius:7,weight:3,fillOpacity:1});
+        marker.getElement()?.setAttribute('aria-expanded','true');
+        marker.getPopup().getElement().querySelector('.preview-close').onclick = () => {
+          map.closePopup(); marker.getElement()?.focus();
+        };
+      })
+      .on('popupclose', () => {
+        if (activeMarker === marker) activeMarker = null;
+        marker.setStyle({radius:4.75,weight:1.5,fillOpacity:.88});
+        marker.getElement()?.setAttribute('aria-expanded','false');
+      });
+    marker.on('add', () => {
+    const element = marker.getElement();
+    element.ownerSVGElement?.setAttribute('role','group');
+    element.ownerSVGElement?.setAttribute('aria-label','Matching property markers');
+    element.setAttribute('tabindex','0');
+    element.setAttribute('role','button');
+    element.setAttribute('aria-label',`${currency(hit.price)} · ${hit.title}`);
+    element.setAttribute('aria-haspopup','dialog');
+    element.setAttribute('aria-expanded','false');
+    element.dataset.houseId = hit.id;
+    element.addEventListener('focus', () => { if (!marker.isPopupOpen()) marker.openTooltip(); });
+    element.addEventListener('blur', () => marker.closeTooltip());
+    element.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault(); event.stopPropagation();
+      marker.openPopup();
+      marker.getPopup().getElement().querySelector('.preview-close').focus();
+    });
+    });
+    marker.addTo(map);
   }
 
   if (bounds.length === 1) map.setView(bounds[0], 13);
   else map.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 });
+}
+
+// View changes resize the existing map; they never change the search or viewport.
+export function resizeVisibleMap() {
+  const element = document.querySelector('#result-map');
+  if (!element?.getClientRects().length) return;
+  if (!state.resultMap) renderLeafletMap();
+  else state.resultMap.invalidateSize({pan:false});
 }

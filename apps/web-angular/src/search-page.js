@@ -6,12 +6,15 @@ import {
   filterValue,
   label,
   state,
+  setHtmlPreservingFocus,
   syncUrl
 } from './core.js';
 import { renderFilters, renderToolbar } from './search/filters.js';
+import { handleFilterDrawerKey, setFilterDrawer, syncFilterDrawer } from './search/filter-drawer.js';
 import { closeHitDetails, openHitDetails, syncHitDialog } from './search/hit-dialog.js';
-import { renderLeafletMap } from './search/map.js';
+import { renderLeafletMap, resizeVisibleMap } from './search/map.js';
 import { renderDebug, renderResults } from './search/results.js';
+import { refreshStatus, updateSystemStrip } from './system-status.js';
 import { setupVirtualizedResults } from './search/virtual-results.js';
 
 let searchDelegatesWired = false;
@@ -44,8 +47,8 @@ function renderSearchSuggestions() {
   const input = document.querySelector('#search-box');
   const suggestions = searchSuggestions(input?.value || '');
   if (!suggestions.length) return '<div class="suggestion-empty">No suggestions</div>';
-  return suggestions.map((item) => `
-    <button type="button" class="suggestion-option" data-search-suggestion="${escapeHtml(item.query)}">
+  return '<p class="suggestion-source">Catalog, saved searches and current listings</p>' + suggestions.map((item) => `
+    <button type="button" class="btn btn-sm suggestion-option" data-search-suggestion="${escapeHtml(item.query)}">
       <span>${escapeHtml(item.query)}</span>
       <span>${escapeHtml(item.type)}</span>
     </button>
@@ -172,23 +175,40 @@ function requestBody() {
 }
 
 let searchTimer;
+let mapResizeBound = false;
 function scheduleSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(runSearch, 180);
 }
 
 export async function runSearch() {
+  clearTimeout(searchTimer);
   const requestId = ++state.searchRequestId;
   state.isLoadingMore = false;
+  state.mobileListScrollTop = 0;
+  state.loadMoreError = null;
   state.selectedHitId = null;
+  state.isSearching = true;
+  state.searchError = null;
+  // Hide stale results rather than showing them as matches for the new criteria.
+  state.response = null;
   syncUrl();
-  const [response] = await Promise.all([
-    api('/api/search', { method: 'POST', body: JSON.stringify(requestBody()) }),
-    loadSync()
-  ]);
-  if (requestId !== state.searchRequestId) return;
-  state.response = response;
   renderSearchPage();
+  void refreshStatus();
+  try {
+    const response = await api('/api/search', { method: 'POST', body: JSON.stringify(requestBody()) });
+    if (requestId !== state.searchRequestId) return;
+    state.response = response;
+  } catch (error) {
+    if (requestId !== state.searchRequestId) return;
+    state.searchError = error.message;
+  } finally {
+    if (requestId === state.searchRequestId) {
+      state.isSearching = false;
+      renderSearchPage();
+      void refreshStatus();
+    }
+  }
 }
 
 export async function loadBootstrap() {
@@ -196,27 +216,42 @@ export async function loadBootstrap() {
   state.providers = bootstrap.providers;
   state.catalog = bootstrap.fixtureCatalog;
   state.geoPresets = bootstrap.geoPresets;
-}
-
-async function loadSync() {
-  state.sync = await api('/api/sync/status');
+  state.storageMode = bootstrap.storageMode;
 }
 
 export async function loadSavedSearches() {
-  const data = await api('/api/saved-searches');
-  state.savedSearches = data.savedSearches;
+  state.savedSearchesLoading = true;
+  state.savedSearchesError = null;
+  try {
+    const data = await api('/api/saved-searches');
+    state.savedSearches = data.savedSearches;
+  } catch (error) { state.savedSearchesError = error.message; }
+  finally {
+    state.savedSearchesLoading = false;
+    // Do not rebuild the results/map or interrupt an in-flight search.
+    const savedGroup = document.querySelector('[data-facet="saved-searches"]');
+    if (savedGroup) {
+      const template = document.createElement('template');
+      template.innerHTML = renderFilters();
+      setHtmlPreservingFocus(savedGroup, template.content.querySelector('[data-facet="saved-searches"]').innerHTML);
+      savedGroup.querySelectorAll('[data-saved-search]').forEach((input) => input.addEventListener('change', () => setSavedSearch(input.dataset.savedSearch, input.checked)));
+    }
+  }
 }
 
 function updateToolbarControls() {
+  const activeCount = Object.values(state.request.filters).reduce((count,value) => count + (Array.isArray(value) ? value.length : value !== undefined && value !== '' ? 1 : 0), 0) + (state.request.savedSearchIds?.length || 0) + Number(Boolean(state.request.geo)) + Number(Boolean(state.request.viewport));
+  const countBadge = document.querySelector('#active-filter-count');
+  if (countBadge) { countBadge.textContent = String(activeCount); countBadge.hidden = !activeCount; countBadge.setAttribute('aria-label', `${activeCount} active filters`); }
+
   const searchBoxInput = document.querySelector('#search-box');
   if (searchBoxInput && searchBoxInput.value !== (state.request.q || '')) searchBoxInput.value = state.request.q || '';
   const providerSelect = document.querySelector('#provider');
   if (providerSelect) providerSelect.value = state.request.provider;
   const sortSelect = document.querySelector('#sort');
   if (sortSelect) sortSelect.value = state.request.sort;
-  document.querySelectorAll('[data-mode]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.mode === state.request.mode);
-  });
+  const modeSelect = document.querySelector('#search-mode');
+  if (modeSelect) modeSelect.value = state.request.mode;
 }
 
 function wireSearchToolbar() {
@@ -240,15 +275,17 @@ function wireSearchToolbar() {
     state.request.page = 1;
     runSearch();
   });
-  document.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
-    state.request.mode = button.dataset.mode;
+  document.querySelector('#search-mode')?.addEventListener('change', (event) => {
+    state.request.mode = event.target.value;
     state.request.page = 1;
-    updateToolbarControls();
     runSearch();
-  }));
+  });
 }
 
 function wireSearchContent() {
+  document.querySelector('#mobile-provider')?.addEventListener('change', (event) => { state.request.provider = event.target.value; state.request.page = 1; runSearch(); });
+  document.querySelector('#mobile-mode')?.addEventListener('change', (event) => { state.request.mode = event.target.value; state.request.page = 1; runSearch(); });
+
   document.querySelectorAll('[data-filter]').forEach((input) => input.addEventListener('change', () => setFilter(input.dataset.filter, input.value, input.checked)));
   document.querySelectorAll('[data-saved-search]').forEach((input) => input.addEventListener('change', () => setSavedSearch(input.dataset.savedSearch, input.checked)));
   document.querySelectorAll('[data-range]').forEach((input) => input.addEventListener('change', () => setRange(input.dataset.range, input.value)));
@@ -258,7 +295,12 @@ function wireSearchContent() {
 function wireSearchDelegates() {
   if (searchDelegatesWired) return;
   searchDelegatesWired = true;
+  window.addEventListener('system-status-updated', () => {
+    const debug = document.querySelector('#search-debug');
+    if (debug) setHtmlPreservingFocus(debug, renderDebug(requestBody));
+  });
   app.addEventListener('click', async (event) => {
+    try {
     if (!(event.target instanceof Element)) return;
     if (event.target.dataset.closeDialog && (event.target.classList.contains('modal-backdrop') || event.target.tagName === 'BUTTON')) return closeHitDetails();
     const target = event.target.closest('button');
@@ -273,7 +315,34 @@ function wireSearchDelegates() {
         return renderSearchPage();
       }
       if (target.dataset.geo !== undefined) return applyGeoPreset(target.dataset.geo);
-      if (target.id === 'clear-filters') return clearFilters();
+      if (target.id === 'clear-filters' || target.id === 'empty-clear') return clearFilters();
+      if (target.id === 'retry-search') return runSearch();
+      if (target.id === 'retry-saved') return loadSavedSearches();
+      if (target.id === 'keyword-recovery') { state.request.mode = 'keyword'; return runSearch(); }
+      if (target.id === 'close-filter-panel') {
+        setFilterDrawer(false);
+        return;
+      }
+      if (target.id === 'mobile-view-toggle') {
+        const list = document.querySelector('#result-list-scroll');
+        const showMap = state.mobileResultsView !== 'map';
+        if (showMap && list) state.mobileListScrollTop = list.scrollTop;
+        state.mobileResultsView = showMap ? 'map' : 'list';
+        document.querySelector('#results-workspace').dataset.mobileView = state.mobileResultsView;
+        target.textContent = showMap ? 'List' : 'Map';
+        target.setAttribute('aria-label', showMap ? 'Show list' : 'Show map');
+        target.setAttribute('aria-pressed', String(showMap));
+        requestAnimationFrame(() => {
+          resizeVisibleMap();
+          if (!showMap && list) list.scrollTop = state.mobileListScrollTop;
+        });
+        return;
+      }
+      if (target.id === 'toggle-filters') {
+        const visible = target.getAttribute('aria-expanded') !== 'true';
+        setFilterDrawer(visible);
+        return;
+      }
       if (target.id === 'prev-page') {
         state.request.page -= 1;
         return runSearch();
@@ -291,14 +360,17 @@ function wireSearchDelegates() {
         applySavedSearchOnly(saved.id);
         return;
       }
-      if (target.dataset.backfill) {
-        await api('/api/sync/backfill', { method: 'POST', body: JSON.stringify({ provider: target.dataset.backfill }) });
-        await runSearch();
-        return;
-      }
-      if (target.id === 'run-worker') {
-        await api('/api/sync/worker/run', { method: 'POST', body: '{}' });
-        await runSearch();
+      if (target.dataset.backfill || target.id === 'run-worker') {
+        if (state.operation) return;
+        state.operation = target.dataset.backfill ? `Backfill ${target.dataset.backfill}` : 'Sync worker';
+        state.operationError = null;
+        renderSearchPage();
+        try {
+          await api(target.dataset.backfill ? '/api/sync/backfill' : '/api/sync/worker/run', {
+            method: 'POST', body: JSON.stringify(target.dataset.backfill ? { provider: target.dataset.backfill } : {})
+          });
+        } catch (error) { state.operationError = error.message; }
+        finally { state.operation = null; await refreshStatus(); renderSearchPage(); }
         return;
       }
       if (target.id === 'mark-sold') {
@@ -312,9 +384,16 @@ function wireSearchDelegates() {
 
     const card = event.target.closest('.result[data-open-hit]');
     if (card && app.contains(card)) return openHitDetails(card.dataset.openHit);
+    } catch (error) { state.operationError = error.message; renderSearchPage(); }
   });
   app.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') return closeHitDetails();
+    if (handleFilterDrawerKey(event)) return;
+    if (event.key === 'Escape') {
+      updateSearchSuggestions(false);
+      const disclosure = event.target.closest?.('.system-info[open], .result-info[open]');
+      if (disclosure) { disclosure.open = false; disclosure.querySelector('summary')?.focus(); }
+      return closeHitDetails();
+    }
     if (event.key !== 'Enter' && event.key !== ' ') return;
     if (!(event.target instanceof Element)) return;
     const card = event.target.closest('.result[data-open-hit]');
@@ -328,19 +407,32 @@ function renderSearchPage() {
   if (!document.querySelector('#search-filters')) {
     app.innerHTML = `
       ${renderToolbar()}
-      <div class="layout">
-        <div id="search-filters"></div>
-        <div id="search-results"></div>
-        <div id="search-debug"></div>
+      <div id="filter-drawer" class="layout search-drawer drawer">
+        <input id="filter-drawer-toggle" class="drawer-toggle" type="checkbox" tabindex="-1" aria-hidden="true" />
+        <div id="search-results" class="drawer-content"></div>
+        <div id="search-filters" class="drawer-side">
+          <label class="drawer-overlay" for="filter-drawer-toggle" aria-label="Close filters"></label>
+          <div id="filter-panel-content"></div>
+        </div>
       </div>
+      <div id="search-debug"></div>
     `;
+    document.querySelector('#filter-drawer-toggle').addEventListener('change', () => setFilterDrawer(document.querySelector('#filter-drawer-toggle').checked));
     wireSearchToolbar();
     wireSearchDelegates();
+    if (!mapResizeBound) {
+      window.matchMedia('(max-width:760px)').addEventListener('change', () => { setFilterDrawer(false, false); requestAnimationFrame(resizeVisibleMap); });
+      mapResizeBound = true;
+    }
   }
   updateToolbarControls();
-  document.querySelector('#search-filters').innerHTML = renderFilters();
+  updateSystemStrip();
+  const filterScroll = document.querySelector('#filter-panel-content .panel')?.scrollTop || 0;
+  setHtmlPreservingFocus(document.querySelector('#filter-panel-content'), renderFilters());
+  document.querySelector('#filter-panel-content .panel').scrollTop = filterScroll;
+  syncFilterDrawer();
   document.querySelector('#search-results').innerHTML = renderResults();
-  document.querySelector('#search-debug').innerHTML = renderDebug(requestBody);
+  setHtmlPreservingFocus(document.querySelector('#search-debug'), renderDebug(requestBody));
   syncHitDialog();
   wireSearchContent();
   updateSearchSuggestions();

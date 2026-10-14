@@ -7,6 +7,7 @@ import {
 } from '@tanstack/virtual-core';
 import {
   api,
+  escapeHtml,
   state
 } from '../core.js';
 import { renderResultCard } from './results.js';
@@ -19,8 +20,9 @@ function hasNextResultsPage() {
 
 function loadedResultsStatus() {
   if (!state.response) return '';
+  if (state.loadMoreError) return `Could not load more listings: ${state.loadMoreError}. Change the search or retry below.`;
   if (state.isLoadingMore) return `Loading more listings... ${state.response.hits.length} of ${state.response.totalHits} loaded`;
-  if (hasNextResultsPage()) return `${state.response.hits.length} of ${state.response.totalHits} loaded. Scroll for more.`;
+  if (hasNextResultsPage()) return `${state.response.hits.length} of ${state.response.totalHits} loaded.`;
   return `All ${state.response.totalHits} matching listings loaded.`;
 }
 
@@ -29,7 +31,7 @@ function renderVirtualRows() {
   const spacer = document.querySelector('#result-list-spacer');
   const summary = document.querySelector('[data-virtual-summary]');
   const virtualizer = state.resultVirtualizer;
-  if (!scrollElement || !spacer || !virtualizer || !state.response) return;
+  if (!scrollElement || !spacer || !virtualizer || !state.response || !scrollElement.getClientRects().length) return;
 
   const hits = state.response.hits;
   const virtualItems = virtualizer.getVirtualItems();
@@ -43,11 +45,12 @@ function renderVirtualRows() {
         data-index="${virtualRow.index}"
         style="transform: translateY(${virtualRow.start}px);"
       >
-        ${hit ? renderResultCard(hit) : `<div class="result loading-row">${loadedResultsStatus()}</div>`}
+        ${hit ? renderResultCard(hit) : `<div class="result loading-row">${escapeHtml(loadedResultsStatus())}${state.loadMoreError ? '<button class="btn btn-sm btn-outline" type="button" data-retry-more>Retry more results</button>' : ''}</div>`}
       </div>
     `;
   }).join('');
 
+  spacer.querySelector('[data-retry-more]')?.addEventListener('click', () => { state.loadMoreError = null; void loadMoreResults(); });
   spacer.querySelectorAll('.virtual-row').forEach((row) => virtualizer.measureElement(row));
   scrollElement.dataset.loadedCount = String(hits.length);
   scrollElement.dataset.totalCount = String(state.response.totalHits);
@@ -67,7 +70,11 @@ function virtualizerOptions(scrollElement) {
     scrollToFn: elementScroll,
     observeElementRect,
     observeElementOffset,
-    measureElement,
+    // A hidden mobile list has zero-sized rows. Keep their measured heights so
+    // switching views cannot feed zero sizes into scroll anchoring.
+    measureElement: (element, entry, instance) => element.getClientRects().length
+      ? measureElement(element, entry, instance)
+      : (instance.measurementsCache[Number(element.dataset.index)]?.size ?? 178),
     onChange: () => renderVirtualRows()
   };
 }
@@ -97,7 +104,7 @@ function updateVirtualizedResults() {
 }
 
 function maybeLoadMoreResults() {
-  if (!state.resultVirtualizer || !hasNextResultsPage() || state.isLoadingMore) return;
+  if (!state.resultVirtualizer || !hasNextResultsPage() || state.isLoadingMore || state.loadMoreError) return;
   const lastItem = [...state.resultVirtualizer.getVirtualItems()].at(-1);
   if (!lastItem || !state.response) return;
   if (lastItem.index >= state.response.hits.length - 1) loadMoreResults();
@@ -124,8 +131,12 @@ async function loadMoreResults() {
       totalHits: nextResponse.totalHits,
       processingTimeMs: nextResponse.processingTimeMs
     };
+  } catch (error) {
+    if (requestId === state.searchRequestId) state.loadMoreError = error.message;
   } finally {
-    state.isLoadingMore = false;
-    updateVirtualizedResults();
+    if (requestId === state.searchRequestId) {
+      state.isLoadingMore = false;
+      updateVirtualizedResults();
+    }
   }
 }

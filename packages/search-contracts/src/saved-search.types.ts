@@ -5,7 +5,8 @@ export type SavedHouseSearch = {
   name: string;
   provider: SearchProviderId;
   criteria: HouseSearchRequest;
-  currentHitCount: number;
+  currentHitCount: number | null;
+  evaluationError?: string;
   lastEvaluatedAt?: string;
   newMatchesSinceLastEvaluation: number;
   seenHouseIds: string[];

@@ -5,7 +5,7 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   webServer: {
-    command: 'npm run dev',
+    command: 'npm run demo:memory',
     url: 'http://127.0.0.1:5173/search',
     reuseExistingServer: !process.env.CI
   },

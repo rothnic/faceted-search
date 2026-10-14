@@ -1,0 +1,112 @@
+name: Real search comparison
+
+on:
+  pull_request:
+
+jobs:
+  native-embeddings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+      TEST_DISPOSABLE_ENGINES: '1'
+      TEST_PG_SEARCH: '1'
+      DEMO_URL: http://127.0.0.1:5173
+      SCREENSHOT_BASE_URL: http://127.0.0.1:5173
+      TEST_DATABASE_URL: postgresql://demo:demo@127.0.0.1:5432/faceted_native_test
+      MEILI_HOST: http://127.0.0.1:7700
+      MEILI_MASTER_KEY: dev_meili_master_key
+      TYPESENSE_HOST: http://127.0.0.1:8108
+      TYPESENSE_API_KEY: dev_typesense_api_key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck && npm run verify:appliance-readiness
+      - uses: actions/cache/restore@v4
+        id: models
+        with:
+          path: |
+            data/models
+            data/native-models
+          key: native-minilm-751bff37-1110a243-linux-x64-v1
+      - name: Verify CPU inference and prepare pinned native model files
+        run: npm run verify:embeddings && npm run native-models:prepare
+      # Preserve verified public weights even if a later browser/assertion fails.
+      - uses: actions/cache/save@v4
+        if: steps.models.outputs.cache-hit != 'true'
+        with:
+          path: |
+            data/models
+            data/native-models
+          key: native-minilm-751bff37-1110a243-linux-x64-v1
+      - name: Build pinned PostgreSQL extensions and start disposable real engines
+        run: |
+          docker build -t faceted-postgres-test -f compose/Dockerfile.postgres .
+          docker run -d --name faceted-pg -p 5432:5432 -e POSTGRES_USER=demo -e POSTGRES_PASSWORD=demo -e POSTGRES_DB=faceted_native_test faceted-postgres-test -c shared_preload_libraries=pg_search
+          docker run -d --name faceted-meili -p 7700:7700 -e MEILI_ENV=development -e MEILI_MASTER_KEY=dev_meili_master_key -e HF_HOME=/models/huggingface -e RAYON_NUM_THREADS=1 -e MEILI_MAX_INDEXING_THREADS=1 -e MEILI_MAX_INDEXING_MEMORY=256MiB -v "$PWD/data/native-models:/models:ro" getmeili/meilisearch:v1.11.3
+          docker run -d --name faceted-typesense -p 8108:8108 --tmpfs /data -v "$PWD/data/native-models/typesense/models:/data/models:ro" typesense/typesense:28.0 --data-dir /data --api-key dev_typesense_api_key --enable-cors --thread-pool-size 2 --num-collections-parallel-load 1 --num-documents-parallel-load 1
+          for i in $(seq 1 60); do
+            if docker exec faceted-pg pg_isready -U demo && curl -fsS http://127.0.0.1:7700/health && curl -fsS http://127.0.0.1:8108/health; then break; fi
+            sleep 2
+          done
+          docker exec faceted-pg pg_isready -U demo
+          curl -fsS http://127.0.0.1:7700/health
+          curl -fsS http://127.0.0.1:8108/health
+          docker exec faceted-pg createdb -U demo faceted_embedding_queue_test
+          docker exec faceted-pg createdb -U demo faceted_postgres_search_test
+      - name: Verify real PGMQ leases, retries, races and restart recovery
+        env:
+          TEST_DATABASE_URL: postgresql://demo:demo@127.0.0.1:5432/faceted_embedding_queue_test
+        run: |
+          mkdir -p test-results/native
+          npm run verify:embedding-queue 2>&1 | tee test-results/native/queue-verification.log
+      - name: Verify actual PostgreSQL FTS, ParadeDB BM25, vector SQL and backend facets
+        env:
+          TEST_DATABASE_URL: postgresql://demo:demo@127.0.0.1:5432/faceted_postgres_search_test
+          EMBEDDING_OFFLINE: '1'
+        run: npm run verify:postgres-search 2>&1 | tee test-results/native/postgres-search-verification.log
+      - name: Verify actual PostgreSQL, Meilisearch and Typesense native generation and search
+        env:
+          EMBEDDING_OFFLINE: '1'
+        run: |
+          mkdir -p test-results/native
+          npm run verify:native-embeddings 2>&1 | tee test-results/native/native-verification.log
+      - run: npx playwright install --with-deps chromium
+      - name: Owned real browser acceptance and genuine-map screenshots across all four backends
+        env:
+          EMBEDDING_OFFLINE: '1'
+          SCREENSHOT_OUTPUT_DIR: test-results/real-screenshots
+        run: npm run verify:real-browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-comparison-screenshots
+          path: |
+            test-results/real-screenshots/
+      - name: Record real-engine resource usage and diagnostics
+        if: always()
+        run: |
+          mkdir -p test-results/native
+          docker stats --no-stream > test-results/native/container-resources.txt || true
+          docker logs faceted-pg > test-results/native/postgres.log 2>&1 || true
+          docker logs faceted-meili > test-results/native/meilisearch.log 2>&1 || true
+          docker logs faceted-typesense > test-results/native/typesense.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-engine-diagnostics
+          path: |
+            test-results/native/
+            test-results/map-readiness*
+            test-results/**/trace.zip
+      - name: Stop disposable services
+        if: always()
+        run: |
+          docker rm -f faceted-pg faceted-meili faceted-typesense || true

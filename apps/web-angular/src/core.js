@@ -2,11 +2,11 @@ const app = document.querySelector('#app');
 const FACET_VISIBLE_LIMIT = 6;
 const RESULT_PAGE_SIZE = 18;
 const PROPERTY_TYPE_STYLES = {
-  single_family: { color: '#2563eb', label: 'Single family' },
-  townhouse: { color: '#059669', label: 'Townhouse' },
-  condo: { color: '#7c3aed', label: 'Condo' },
-  multi_family: { color: '#dc2626', label: 'Multi family' },
-  land: { color: '#d97706', label: 'Land' }
+  single_family: { color: 'var(--map-single-family)', label: 'Single family' },
+  townhouse: { color: 'var(--map-townhouse)', label: 'Townhouse' },
+  condo: { color: 'var(--map-condo)', label: 'Condo' },
+  multi_family: { color: 'var(--map-multi-family)', label: 'Multi family' },
+  land: { color: 'var(--map-land)', label: 'Land' }
 };
 const state = {
   providers: [],
@@ -20,8 +20,23 @@ const state = {
   resultVirtualCleanup: null,
   isLoadingMore: false,
   selectedHitId: null,
+  selectedHitRecord: null,
+  detailLoading: false,
+  detailError: null,
   request: requestFromUrl(),
   sync: null,
+  storageMode: null,
+  embeddings: null,
+  embeddingJobs: null,
+  embeddingJobsError: null,
+  isSearching: false,
+  searchError: null,
+  savedSearchesLoading: true,
+  savedSearchesError: null,
+  operation: null,
+  operationError: null,
+  mobileResultsView: 'list',
+  mobileListScrollTop: 0,
   searchRequestId: 0
 };
 
@@ -68,7 +83,10 @@ async function api(path, options = {}) {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
   });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `${response.status} ${response.statusText}`);
+  }
   return response.json();
 }
 
@@ -89,7 +107,8 @@ function propertyTypeStyle(type) {
 }
 
 function selectedHit() {
-  return (state.response?.hits || []).find((hit) => hit.id === state.selectedHitId);
+  return (state.response?.hits || []).find((hit) => hit.id === state.selectedHitId)
+    || (state.selectedHitRecord?.id === state.selectedHitId ? state.selectedHitRecord : null);
 }
 
 function escapeHtml(value) {
@@ -101,6 +120,15 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
+// Polling must not remove the keyboard user's current control.
+function setHtmlPreservingFocus(element, html) {
+  const focused = element.contains(document.activeElement) ? document.activeElement.id : null;
+  const openDetails = [...element.querySelectorAll('details[id][open]')].map((item) => item.id);
+  element.innerHTML = html;
+  openDetails.forEach((id) => { const details = element.querySelector(`#${CSS.escape(id)}`); if (details) details.open = true; });
+  if (focused) element.querySelector(`#${CSS.escape(focused)}`)?.focus({ preventScroll: true });
+}
+
 function provider() {
   return state.providers.find((item) => item.id === state.request.provider) || state.providers[0];
 }
@@ -110,7 +138,7 @@ function savedSearchLabel(id) {
 }
 
 function savedSearchCountLabel(search) {
-  return String(search.currentHitCount ?? 0);
+  return search.currentHitCount == null || search.evaluationError ? '?' : String(search.currentHitCount);
 }
 
 function filterValue(key, value) {
@@ -136,6 +164,7 @@ export {
   savedSearchLabel,
   selectedFilterValues,
   selectedHit,
+  setHtmlPreservingFocus,
   state,
   syncUrl,
   titleLabel
