@@ -8,6 +8,7 @@
     "web:build": "vite build",
     "web:dev": "vite --host 127.0.0.1",
     "test": "playwright test",
+    "test:unit": "node --test tests/unit/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "screenshots:update": "node --import tsx scripts/capture-screenshots.ts",
     "seed": "node --import tsx scripts/seed.ts",

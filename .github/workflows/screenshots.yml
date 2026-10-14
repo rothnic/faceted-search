@@ -20,6 +20,7 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm run test:unit
       - run: npm run typecheck
       # Explicit internal fixture tests; real comparison screenshots live in native-embeddings.yml.
       - uses: actions/cache/restore@v4
