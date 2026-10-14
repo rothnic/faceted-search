@@ -107,11 +107,17 @@ test('a late search response cannot replace a newer result', async ({ page }) =>
   });
   await page.goto('/search?mode=keyword&q=garage');
   await expect(page.getByText(/Searching… Semantic searches/)).toBeVisible();
+  const latestResponse = page.waitForResponse(response => response.url().endsWith('/api/search') && response.request().postDataJSON()?.q === 'condo');
   await page.getByRole('textbox', { name: 'Search', exact: true }).fill('condo');
-  await expect(page.getByRole('button', { name: /q: condo/ })).toBeVisible();
+  const latest = await (await latestResponse).json();
+  await expect(page.locator('.result').first()).toHaveAttribute('data-house-id', latest.hits[0].id);
+  await expect(page.locator('.result-total')).toHaveText(String(latest.totalHits));
+  await expect(page.getByRole('button', { name: /q: condo/ })).toHaveCount(0);
   release();
   await expect(page.getByRole('button', { name: /q: garage/ })).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'Search', exact: true })).toHaveValue('condo');
+  await expect(page.locator('.result').first()).toHaveAttribute('data-house-id', latest.hits[0].id);
+  await expect(page.locator('.result-total')).toHaveText(String(latest.totalHits));
 });
 
 test('sync action has a single in-flight request and an explicit recoverable failure', async ({ page }) => {

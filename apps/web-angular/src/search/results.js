@@ -4,27 +4,20 @@ import {
   label,
   propertyTypeStyle,
   provider,
-  savedSearchLabel,
   state,
   titleLabel
 } from '../core.js';
+import { activeFilters } from './active-filters.js';
 import { renderResultMap } from './map.js';
 
 function renderRefinements() {
-  const parts = [];
-  if (state.request.q) parts.push({ label: `q: ${state.request.q}`, action: 'q' });
-  for (const id of state.request.savedSearchIds || []) parts.push({ label: `saved: ${savedSearchLabel(id)}`, action: 'saved', value: id });
-  for (const [key, value] of Object.entries(state.request.filters)) {
-    if (Array.isArray(value)) value.forEach((item) => parts.push({ label: `${key}: ${label(item)}`, action: 'filter', key, value: item }));
-    else if (value !== undefined) parts.push({ label: `${key}: ${value}`, action: 'filter', key });
-  }
-  if (state.request.geo) parts.push({ label: `radius: ${state.request.geo.radiusMiles} miles`, action: 'geo' });
-  if (state.request.viewport) parts.push({ label: 'inside map viewport', action: 'viewport' });
+  const parts = activeFilters(state.request).map((part) => ({ ...part, label: part.action === 'geo' ? `radius: ${part.value} miles` : part.action === 'viewport' ? 'inside map viewport' : `${part.key}: ${label(String(part.value))}` }));
+  if (!parts.length) return '';
   return `<div class="refinements">${parts.map((part) => `
     <button type="button" class="btn btn-ghost refinement-pill" aria-label="Remove ${escapeHtml(part.label)}" data-remove-refinement="${part.action}" ${part.key ? `data-key="${part.key}"` : ''} ${part.value !== undefined ? `data-value="${escapeHtml(part.value)}"` : ''}>
       <span class="badge badge-soft badge-primary"><span>${escapeHtml(part.label)}</span><span aria-hidden="true">×</span></span>
     </button>
-  `).join('') || '<span class="stats">No refinements selected</span>'}</div>`;
+  `).join('')}</div>`;
 }
 
 export function renderResultCard(hit) {
@@ -58,7 +51,7 @@ export function renderResults() {
         <div id="result-list-scroll" class="result-list-scroll" data-loaded-count="${response.hits.length}" data-total-count="${response.totalHits}">
           <div id="result-list-spacer" class="result-list-spacer"></div>
         </div>
-      ` : '<div class="empty-state"><h3>No listings match this search</h3><p>Try fewer filters or a broader query. You can still save it.</p><button class="btn btn-sm btn-outline" id="empty-clear">Clear search and filters</button></div>'}
+      ` : '<div class="empty-state"><h3>No listings match this search</h3><p>Try fewer filters or a broader query. You can still save it.</p><button class="btn btn-sm btn-outline" id="empty-clear">Clear filters</button></div>'}
       </div><div class="map-column">${renderResultMap()}</div></div>
     </section>
   `;

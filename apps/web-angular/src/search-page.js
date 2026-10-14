@@ -17,6 +17,8 @@ import { renderDebug, renderResults } from './search/results.js';
 import { refreshStatus, updateSystemStrip } from './system-status.js';
 import { setupVirtualizedResults } from './search/virtual-results.js';
 
+import { activeFilters, clearFacetCriteria, clearQueryCriteria, removeFacetCriteria } from './search/active-filters.js';
+
 let searchDelegatesWired = false;
 
 function suggestionSources() {
@@ -106,24 +108,7 @@ function applySavedSearchOnly(id) {
 }
 
 function removeRefinement(button) {
-  const action = button.dataset.removeRefinement;
-  if (action === 'q') state.request.q = '';
-  if (action === 'saved') {
-    state.request.savedSearchIds = (state.request.savedSearchIds || []).filter((id) => id !== button.dataset.value);
-  }
-  if (action === 'filter') {
-    const key = button.dataset.key;
-    if (!key) return;
-    const value = button.dataset.value;
-    if (Array.isArray(state.request.filters[key]) && value !== undefined) {
-      state.request.filters[key] = state.request.filters[key].filter((item) => String(item) !== value);
-    } else {
-      delete state.request.filters[key];
-    }
-  }
-  if (action === 'geo') delete state.request.geo;
-  if (action === 'viewport') delete state.request.viewport;
-  state.request.page = 1;
+  state.request = removeFacetCriteria(state.request, { action: button.dataset.removeRefinement, key: button.dataset.key, value: button.dataset.value });
   updateToolbarControls();
   runSearch();
 }
@@ -135,17 +120,7 @@ function setRange(key, value) {
 }
 
 function clearFilters() {
-  state.request = {
-    provider: state.request.provider,
-    q: '',
-    mode: 'hybrid',
-    filters: {},
-    sort: 'relevance',
-    page: 1,
-    pageSize: RESULT_PAGE_SIZE,
-    includeFacets: true,
-    savedSearchIds: []
-  };
+  state.request = clearFacetCriteria(state.request);
   updateToolbarControls();
   runSearch();
 }
@@ -240,12 +215,14 @@ export async function loadSavedSearches() {
 }
 
 function updateToolbarControls() {
-  const activeCount = Object.values(state.request.filters).reduce((count,value) => count + (Array.isArray(value) ? value.length : value !== undefined && value !== '' ? 1 : 0), 0) + (state.request.savedSearchIds?.length || 0) + Number(Boolean(state.request.geo)) + Number(Boolean(state.request.viewport));
+  const activeCount = activeFilters(state.request).length;
   const countBadge = document.querySelector('#active-filter-count');
   if (countBadge) { countBadge.textContent = String(activeCount); countBadge.hidden = !activeCount; countBadge.setAttribute('aria-label', `${activeCount} active filters`); }
 
   const searchBoxInput = document.querySelector('#search-box');
   if (searchBoxInput && searchBoxInput.value !== (state.request.q || '')) searchBoxInput.value = state.request.q || '';
+  const queryClear = document.querySelector('#clear-query');
+  if (queryClear) queryClear.hidden = !state.request.q;
   const providerSelect = document.querySelector('#provider');
   if (providerSelect) providerSelect.value = state.request.provider;
   const sortSelect = document.querySelector('#sort');
@@ -263,6 +240,7 @@ function wireSearchToolbar() {
   document.querySelector('#search-box')?.addEventListener('input', (event) => {
     state.request.q = event.target.value;
     state.request.page = 1;
+    updateToolbarControls();
     updateSearchSuggestions(true);
     scheduleSearch();
   });
@@ -315,6 +293,13 @@ function wireSearchDelegates() {
         return renderSearchPage();
       }
       if (target.dataset.geo !== undefined) return applyGeoPreset(target.dataset.geo);
+      if (target.id === 'clear-query') {
+        state.request = clearQueryCriteria(state.request);
+        updateToolbarControls();
+        document.querySelector('#search-box')?.focus();
+        updateSearchSuggestions(false);
+        return runSearch();
+      }
       if (target.id === 'clear-filters' || target.id === 'empty-clear') return clearFilters();
       if (target.id === 'retry-search') return runSearch();
       if (target.id === 'retry-saved') return loadSavedSearches();

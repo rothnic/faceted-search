@@ -44,7 +44,8 @@ test('search suggestions appear while typing and can apply a query', async ({ pa
 
   await garageSuggestion.click();
   await expect(searchBox).toHaveValue('garage');
-  await expect(page.getByRole('button', { name: /q: garage/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /q: garage/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Clear query', exact: true })).toBeVisible();
 });
 
 test('provider switcher keeps the same UI while changing debug payloads', async ({ page }) => {
@@ -90,21 +91,31 @@ test('top refinement chips can clear individual filters when their text is click
   await page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/).check();
   await page.locator('.facet-group[data-facet="saved-searches"]').getByLabel(/Garage homes chip scope/).check();
 
-  await expect(page.getByRole('button', { name: /q: home/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /q: home/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /city: Madison/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /saved: Garage homes chip scope/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /saved: Garage homes chip scope/i })).toHaveCount(0);
 
   await page.getByRole('button', { name: /city: Madison/i }).getByText(/city: Madison/i).click();
   await expect(page.getByRole('button', { name: /city: Madison/i })).toBeHidden();
   await expect(page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/)).not.toBeChecked();
 
-  await page.getByRole('button', { name: /saved: Garage homes chip scope/i }).getByText(/saved: Garage homes chip scope/i).click();
-  await expect(page.getByRole('button', { name: /saved: Garage homes chip scope/i })).toBeHidden();
-  await expect(page.locator('.facet-group[data-facet="saved-searches"]').getByLabel(/Garage homes chip scope/)).not.toBeChecked();
-
-  await page.getByRole('button', { name: /q: home/i }).getByText(/q: home/i).click();
-  await expect(page.getByRole('button', { name: /q: home/i })).toBeHidden();
+  await expect(page.locator('.refinements')).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Search' })).toHaveValue('home');
+  const scope = page.locator('.facet-group[data-facet="saved-searches"]').getByLabel(/Garage homes chip scope/);
+  await expect(scope).toBeChecked();
+  await page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/).check();
+  await page.locator('#sort').selectOption('price_desc');
+  await page.locator('#clear-filters').click();
+  await expect(page.locator('.refinements')).toHaveCount(0);
+  await expect(scope).toBeChecked();
+  await expect(page.getByRole('textbox', { name: 'Search' })).toHaveValue('home');
+  await expect(page.locator('#search-mode')).toHaveValue('keyword');
+  await expect(page.locator('#sort')).toHaveValue('price_desc');
+  await page.getByRole('button', { name: 'Clear query', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Search' })).toHaveValue('');
+  await expect(scope).toBeChecked();
+  await scope.uncheck();
+  await expect(scope).not.toBeChecked();
   expect(saved.currentHitCount).toBeGreaterThan(0);
 });
 
@@ -188,7 +199,7 @@ test('zero-hit searches can be saved in place and applied from the filter rail',
   const savedOption = savedScope.locator('.facet-option', { has: page.getByLabel(/Zero-hit waterfront castle/) });
   await expect(savedOption.locator('[data-saved-search]')).toBeChecked();
   await expect(savedOption.locator('.count')).toHaveText('0');
-  await expect(page.getByRole('button', { name: /saved: Zero-hit waterfront castle/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /saved: Zero-hit waterfront castle/i })).toHaveCount(0);
   await expect(page.getByText(/No listings match this search/i)).toBeVisible();
 });
 
@@ -277,7 +288,7 @@ test('saving manual filters adds and applies the new saved search without leavin
   await page.getByRole('button', { name: 'Save search' }).click();
 
   await expect(page).toHaveURL(/\/search/);
-  await expect(page.getByRole('button', { name: /saved: Madison under 350k saved in place/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /saved: Madison under 350k saved in place/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /city: Madison/i })).toBeHidden();
   await expect(page.getByRole('button', { name: /maxPrice: 350000/i })).toBeHidden();
   await expect(page.locator('.result-total')).toHaveText('10');

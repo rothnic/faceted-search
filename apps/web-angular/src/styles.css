@@ -419,3 +419,10 @@ h3 { font-size:15px; font-weight:650; margin:0 0 10px; }
 @media(min-width:761px) {
  .search-drawer.drawer-open > .drawer-side > #filter-panel-content { transition:none; translate:0; }
 }
+
+/* Query clearing is independent from the facet controls. */
+#search-box { padding-right:44px; }
+#clear-query { position:absolute; right:0; top:0; width:44px; min-height:42px; height:100%; padding:0; border:0; background:transparent; font-size:20px; }
+#clear-query[hidden] { display:none; }
+#clear-query:focus-visible { outline:2px solid var(--accent); outline-offset:-3px; }
+.refinement-pill > .badge { min-height:28px; height:28px; border-radius:5px; }

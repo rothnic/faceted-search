@@ -16,7 +16,7 @@ export function renderToolbar() {
       <div class="toolbar-heading"><h1>Find homes</h1><div id="system-summary">${renderSystemStrip()}</div>${state.storageMode === 'memory' ? '<span class="badge badge-outline demo-label">Sample data</span>' : ''}</div>
       <div class="field search-field">
         <label class="search-accessible-label" for="search-box">Search</label>
-        <div class="search-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input class="input input-lg" id="search-box" value="${escapeHtml(state.request.q || '')}" placeholder="Search homes, neighborhoods, or features…" autocomplete="off" /></div>
+        <div class="search-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input class="input input-lg" id="search-box" value="${escapeHtml(state.request.q || '')}" placeholder="Search homes, neighborhoods, or features…" autocomplete="off" /><button type="button" class="btn btn-ghost" id="clear-query" aria-label="Clear query" ${state.request.q ? '' : 'hidden'}><span aria-hidden="true">×</span></button></div>
         <div id="search-suggestions" class="suggestions" hidden></div>
       </div>
       <div class="search-options">

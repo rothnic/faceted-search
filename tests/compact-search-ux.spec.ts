@@ -57,7 +57,7 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       const resultButtons=await page.locator('#mobile-view-toggle,#save-search').evaluateAll(es=>es.map(e=>({height:e.getBoundingClientRect().height,y:e.getBoundingClientRect().y,font:getComputedStyle(e).fontSize,padding:getComputedStyle(e).paddingInlineStart})));
       expect(resultButtons[0]).toEqual(resultButtons[1]);
       expect(resultButtons[0].height).toBe(44);
-      const chipPaint=await page.locator('.refinement-pill > .badge,.hit-chip > .badge').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().height));
+      const chipPaint=await page.locator('.hit-chip > .badge').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().height));
       expect(Math.max(...chipPaint)).toBeLessThanOrEqual(24);
       await expect(page.locator('#result-info-toggle')).toHaveCount(0);
       const utilityStyles=await page.locator('#sort,#system-info-toggle').evaluateAll(es=>es.map(e=>({border:getComputedStyle(e).borderTopWidth,height:e.getBoundingClientRect().height})));
@@ -138,6 +138,12 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       await page.getByLabel('Mode',{exact:true}).selectOption('keyword');
       await expect(page).toHaveURL(/mode=keyword/);
     }
+    if (viewport.width > 760) await page.locator('[data-facet="city"] input').first().check();
+    await expect(page.locator('.refinement-pill')).toHaveCount(1);
+    const facetPaint = await page.locator('.refinement-pill > .badge').evaluateAll(es => es.map(e => e.getBoundingClientRect().height));
+    expect(facetPaint).toHaveLength(1);
+    expect(facetPaint[0]).toBeGreaterThanOrEqual(26);
+    expect(facetPaint[0]).toBeLessThanOrEqual(30);
     await expect(page.locator('body')).not.toContainText('Scroll for more');
   });
 }
