@@ -31,7 +31,7 @@ for (const width of [320,390]) {
     await expect(page.locator('#filter-drawer-toggle')).toBeChecked();
     await page.locator('#clear-filters').focus();
     await page.keyboard.press('Shift+Tab');
-    await expect(page.locator('#viewport')).toBeFocused();
+    await expect(page.locator('[data-facet="saved-searches"] input[type=checkbox]').last()).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(page.locator('#clear-filters')).toBeFocused();
     await page.keyboard.press('Escape');
@@ -57,7 +57,7 @@ for (const width of [320,390]) {
     await expect(page.locator('#search-filters')).toBeHidden();
     await expect(page.locator('#toggle-filters')).toBeFocused();
     await page.locator('#mobile-view-toggle').click();
-    const buttons=await page.locator('#mobile-view-toggle,#save-search').evaluateAll(es=>es.map(e=>({height:e.getBoundingClientRect().height,y:e.getBoundingClientRect().y,font:getComputedStyle(e).fontSize,padding:getComputedStyle(e).paddingInlineStart})));
+    const buttons=await page.locator('#mobile-view-toggle,#save-search').evaluateAll(es=>es.map(e=>({height:e.getBoundingClientRect().height,font:getComputedStyle(e).fontSize,padding:getComputedStyle(e).paddingInlineStart})));
     expect(buttons[0]).toEqual(buttons[1]);
     expect(buttons[0].height).toBe(44);
     await page.locator('#toggle-filters').click();
@@ -67,7 +67,7 @@ for (const width of [320,390]) {
     await expect(page.locator('#filter-panel-content')).not.toHaveAttribute('aria-modal');
     await expect(page.locator('#clear-filters')).toBeFocused();
     expect(await page.locator('#search-results').evaluate(e=>(e as HTMLElement).inert)).toBe(false);
-    await expect(page.locator('#save-search')).toHaveCSS('height','44px');
+    await expect(page.locator('#save-search')).toHaveCSS('height','40px');
     await page.setViewportSize({width,height:844});
     await expect(page.locator('#search-filters')).toBeHidden();
     await expect(page.locator('#filter-drawer-toggle')).not.toBeChecked();

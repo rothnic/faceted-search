@@ -107,11 +107,17 @@ test('a late search response cannot replace a newer result', async ({ page }) =>
   });
   await page.goto('/search?mode=keyword&q=garage');
   await expect(page.getByText(/Searching… Semantic searches/)).toBeVisible();
+  const latestResponse = page.waitForResponse(response => response.url().endsWith('/api/search') && response.request().postDataJSON()?.q === 'condo');
   await page.getByRole('textbox', { name: 'Search', exact: true }).fill('condo');
-  await expect(page.getByRole('button', { name: /q: condo/ })).toBeVisible();
+  const latest = await (await latestResponse).json();
+  await expect(page.locator('.result').first()).toHaveAttribute('data-house-id', latest.hits[0].id);
+  await expect(page.locator('.result-total')).toHaveText(String(latest.totalHits));
+  await expect(page.getByRole('button', { name: /q: condo/ })).toHaveCount(0);
   release();
   await expect(page.getByRole('button', { name: /q: garage/ })).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'Search', exact: true })).toHaveValue('condo');
+  await expect(page.locator('.result').first()).toHaveAttribute('data-house-id', latest.hits[0].id);
+  await expect(page.locator('.result-total')).toHaveText(String(latest.totalHits));
 });
 
 test('sync action has a single in-flight request and an explicit recoverable failure', async ({ page }) => {
@@ -268,4 +274,66 @@ test('small muted text meets WCAG AA contrast against its rendered background', 
     });
   });
   for (const {selector,ratio} of ratios) expect(ratio, selector).toBeGreaterThanOrEqual(4.5);
+});
+
+test('search shell is usable while provider bootstrap is held', async ({page}) => {
+  let started!:()=>void;
+  let release!:()=>void;
+  const bootstrapStarted=new Promise<void>(resolve=>{started=resolve;});
+  const bootstrapGate=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/api/providers',async route=>{started(); await bootstrapGate; await route.continue();});
+  await page.goto('/search?mode=keyword&q=garage',{waitUntil:'domcontentloaded'});
+  await expect(page.getByRole('textbox',{name:'Search',exact:true})).toBeVisible();
+  await expect(page.locator('.results-head')).toBeVisible();
+  await expect(page.locator('.loading-list')).toBeVisible();
+  await bootstrapStarted;
+  release();
+  await expect(page.locator('#result-list-scroll')).toBeVisible();
+});
+
+test('held refetch retains old results and geometry with an explicit updating state', async ({page}) => {
+  let started!:()=>void;
+  let release!:()=>void;
+  const searchStarted=new Promise<void>(resolve=>{started=resolve;});
+  const searchGate=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/api/search',async route=>{
+    const body=route.request().postDataJSON();
+    if(body.q==='hampton'){started(); await searchGate;}
+    await route.continue();
+  });
+  await page.setViewportSize({width:375,height:844});
+  await page.goto('/search?mode=keyword&q=garage');
+  await expect(page.locator('#result-list-scroll')).toBeVisible();
+  const countBefore=await page.locator('.result-total').innerText();
+  const anchorsBefore=await Promise.all(['.results-head','#results-workspace','#result-list-scroll','.result'].map(selector=>page.locator(selector).first().boundingBox()));
+  await page.locator('#search-box').fill('hampton');
+  await searchStarted;
+  await expect(page.getByRole('status').filter({hasText:'Updating results'})).toBeVisible();
+  await expect(page.locator('.result-total')).toHaveText(countBefore);
+  await expect(page.locator('.result').first()).toBeVisible();
+  const anchorsDuring=await Promise.all(['.results-head','#results-workspace','#result-list-scroll','.result'].map(selector=>page.locator(selector).first().boundingBox()));
+  for(let i=0;i<anchorsBefore.length;i++) {
+    expect(anchorsBefore[i]).not.toBeNull(); expect(anchorsDuring[i]).not.toBeNull();
+    expect(Math.abs(anchorsBefore[i]!.x-anchorsDuring[i]!.x)).toBeLessThanOrEqual(4);
+    expect(Math.abs(anchorsBefore[i]!.y-anchorsDuring[i]!.y)).toBeLessThanOrEqual(4);
+    expect(Math.abs(anchorsBefore[i]!.height-anchorsDuring[i]!.height)).toBeLessThanOrEqual(4);
+  }
+  release();
+  await expect(page.getByRole('status').filter({hasText:'Updating results'})).toBeHidden();
+  await expect(page.getByRole('textbox',{name:'Search',exact:true})).toHaveValue('hampton');
+});
+
+test('search response stays page bounded and records map payload size', async ({page}) => {
+  const responsePromise=page.waitForResponse(response=>response.url().includes('/api/search')&&response.request().method()==='POST');
+  await page.goto('/search?mode=keyword&q=garage');
+  const response=await responsePromise;
+  const body=await response.json();
+  expect(body.hits.length).toBeLessThanOrEqual(30);
+  expect(body.totalHits).toBeGreaterThanOrEqual(body.hits.length);
+  expect(body.totalInventory).toBeGreaterThanOrEqual(body.totalHits);
+  const mapBytes=new TextEncoder().encode(JSON.stringify(body.mapHits||[])).byteLength;
+  const responseBytes=new TextEncoder().encode(JSON.stringify(body)).byteLength;
+  console.log('SEARCH_PAYLOAD_BYTES',{responseBytes,mapBytes,hits:body.hits.length,mapHits:body.mapHits?.length,totalHits:body.totalHits});
+  expect(mapBytes).toBeLessThanOrEqual(50*1024);
+  expect(responseBytes).toBeLessThanOrEqual(75*1024);
 });

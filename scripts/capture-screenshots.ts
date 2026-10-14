@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { chromium, type Page } from '@playwright/test';
+import { chromium, expect, type Page } from '@playwright/test';
 
 const baseURL = process.env.SCREENSHOT_BASE_URL;
 const outputDir = process.env.SCREENSHOT_OUTPUT_DIR || 'docs/screenshots';
@@ -198,7 +198,7 @@ async function main() {
   await waitForSearchReady(page);
   const saved = page.locator('.facet-group[data-facet="saved-searches"] .facet-option').filter({ hasText: 'Waterfront home near Huntsville' });
   await saved.locator('input').check();
-  await page.getByRole('button', { name: /saved: Waterfront home near Huntsville/i }).waitFor();
+  await expect(saved.locator('input')).toBeChecked();
   await waitForSearchReady(page);
   await capture(page, `${outputDir}/saved-search-scope.png`);
 

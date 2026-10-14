@@ -4,27 +4,21 @@ import {
   label,
   propertyTypeStyle,
   provider,
-  savedSearchLabel,
   state,
   titleLabel
 } from '../core.js';
-import { renderResultMap } from './map.js';
+import { renderResultsToolbar } from './controls.js';
+import { activeFilters } from './active-filters.js';
+import { renderResultMap } from './map-markup.js';
 
 function renderRefinements() {
-  const parts = [];
-  if (state.request.q) parts.push({ label: `q: ${state.request.q}`, action: 'q' });
-  for (const id of state.request.savedSearchIds || []) parts.push({ label: `saved: ${savedSearchLabel(id)}`, action: 'saved', value: id });
-  for (const [key, value] of Object.entries(state.request.filters)) {
-    if (Array.isArray(value)) value.forEach((item) => parts.push({ label: `${key}: ${label(item)}`, action: 'filter', key, value: item }));
-    else if (value !== undefined) parts.push({ label: `${key}: ${value}`, action: 'filter', key });
-  }
-  if (state.request.geo) parts.push({ label: `radius: ${state.request.geo.radiusMiles} miles`, action: 'geo' });
-  if (state.request.viewport) parts.push({ label: 'inside map viewport', action: 'viewport' });
-  return `<div class="refinements">${parts.map((part) => `
+  const parts = activeFilters(state.request).map((part) => ({ ...part, label: part.action === 'geo' ? `radius: ${part.value} miles` : part.action === 'viewport' ? 'inside map viewport' : `${part.key}: ${label(String(part.value))}` }));
+  if (!parts.length) return '';
+  return `<div class="refinements" aria-label="Applied filters">${parts.map((part) => `
     <button type="button" class="btn btn-ghost refinement-pill" aria-label="Remove ${escapeHtml(part.label)}" data-remove-refinement="${part.action}" ${part.key ? `data-key="${part.key}"` : ''} ${part.value !== undefined ? `data-value="${escapeHtml(part.value)}"` : ''}>
       <span class="badge badge-soft badge-primary"><span>${escapeHtml(part.label)}</span><span aria-hidden="true">×</span></span>
     </button>
-  `).join('') || '<span class="stats">No refinements selected</span>'}</div>`;
+  `).join('')}<button type="button" class="btn btn-sm btn-ghost clear-all-filters" id="clear-all-filters">Clear all</button></div>`;
 }
 
 export function renderResultCard(hit) {
@@ -42,23 +36,20 @@ export function renderResultCard(hit) {
 
 export function renderResults() {
   const response = state.response;
-  if (state.searchError) return `<section class="panel"><h2>Search unavailable</h2><p class="notice error" role="alert">${escapeHtml(state.searchError)}</p><p>Your criteria are preserved. You can retry or try keyword search.</p><div class="action-row"><button class="btn btn-sm btn-outline" id="retry-search">Retry search</button><button class="btn btn-sm btn-outline" id="keyword-recovery">Use keyword search</button></div></section>`;
-  if (!response) return '<section class="panel" aria-busy="true"><h2>Results</h2><p role="status">Searching… Semantic searches may need to download and initialize the local CPU model on first use.</p><div class="loading-skeleton" aria-hidden="true"></div><div class="loading-skeleton" aria-hidden="true"></div></section>';
+  const toolbar = renderResultsToolbar({ request: state.request, response, view: state.mobileResultsView, desktopView: state.desktopResultsView, facetCount: activeFilters(state.request).length, chips: renderRefinements() });
+  if (state.searchError) return `<section class="results-panel">${toolbar}<section class="panel"><h2>Search unavailable</h2><p class="notice error" role="alert">${escapeHtml(state.searchError)}</p><p>Your criteria are preserved. You can retry or try keyword search.</p><div class="action-row"><button class="btn btn-sm btn-outline" id="retry-search">Retry search</button><button class="btn btn-sm btn-outline" id="keyword-recovery">Use keyword search</button></div></section></section>`;
+  if (!response) return `<section class="results-panel">${toolbar}<div class="results-workspace" id="results-workspace" data-mobile-view="list" data-desktop-view="${state.desktopResultsView}"><div class="listing-column"><div class="result-list-scroll loading-list" aria-busy="true"><div class="loading-skeleton" aria-hidden="true"></div><div class="loading-skeleton" aria-hidden="true"></div></div></div><div class="map-column"><section class="result-map" aria-label="Map of visible results"><div class="leaflet-result-map map-placeholder" role="status">Map appears with matching listings</div><p class="map-feedback">Map loads with matching listings</p></section></div></div><p class="visually-hidden" role="status">Searching… Semantic searches may need to download and initialize the local CPU model on first use.</p></section>`;
   return `
-    <section class="results-panel">
-      <div class="results-head">
-        <h2>Homes <span class="result-total">${response.totalHits}</span></h2>
-        ${renderRefinements()}
-        <div class="result-tools">${response.mapHits?.length ? `<button class="btn btn-sm btn-ghost mobile-view-toggle" id="mobile-view-toggle" aria-controls="results-workspace" aria-pressed="${state.mobileResultsView === 'map'}" aria-label="${state.mobileResultsView === 'map' ? 'Show list' : 'Show map'}">${state.mobileResultsView === 'map' ? 'List' : 'Map'}</button>` : ''}<button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button>
-        </div>
-      </div>
+    <section class="results-panel${state.isSearching ? ' is-updating' : ''}" ${state.isSearching ? 'aria-busy="true"' : ''}>
+      ${toolbar}
+      ${state.isSearching ? '<p class="results-updating" role="status">Updating results…</p>' : ''}
       ${(response.debug?.warnings || []).map((warning) => `<p class="notice execution-warning">${escapeHtml(warning)}</p>`).join('')}
-      <div class="results-workspace" id="results-workspace" data-mobile-view="${response.mapHits?.length ? state.mobileResultsView : 'list'}"><div class="listing-column">
+      <div class="results-workspace" id="results-workspace" data-mobile-view="${state.mobileResultsView}" data-desktop-view="${state.desktopResultsView}"><div class="listing-column">
       ${response.hits.length ? `
         <div id="result-list-scroll" class="result-list-scroll" data-loaded-count="${response.hits.length}" data-total-count="${response.totalHits}">
           <div id="result-list-spacer" class="result-list-spacer"></div>
         </div>
-      ` : '<div class="empty-state"><h3>No listings match this search</h3><p>Try fewer filters or a broader query. You can still save it.</p><button class="btn btn-sm btn-outline" id="empty-clear">Clear search and filters</button></div>'}
+      ` : '<div class="empty-state"><h3>No listings match this search</h3><p>Try fewer filters or a broader query. You can still save it.</p><button class="btn btn-sm btn-outline" id="empty-clear">Clear filters</button></div>'}
       </div><div class="map-column">${renderResultMap()}</div></div>
     </section>
   `;

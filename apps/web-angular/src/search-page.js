@@ -12,12 +12,16 @@ import {
 import { renderFilters, renderToolbar } from './search/filters.js';
 import { handleFilterDrawerKey, setFilterDrawer, syncFilterDrawer } from './search/filter-drawer.js';
 import { closeHitDetails, openHitDetails, syncHitDialog } from './search/hit-dialog.js';
-import { renderLeafletMap, resizeVisibleMap } from './search/map.js';
 import { renderDebug, renderResults } from './search/results.js';
+import { renderResultMap } from './search/map-markup.js';
 import { refreshStatus, updateSystemStrip } from './system-status.js';
 import { setupVirtualizedResults } from './search/virtual-results.js';
 
+import { placeSearchInformation } from './search/responsive-controls.js';
+import { activeFilters, clearFacetCriteria, clearQueryCriteria, removeFacetCriteria } from './search/active-filters.js';
+
 let searchDelegatesWired = false;
+let searchSuggestionsDismissed = false;
 
 function suggestionSources() {
   const cities = (state.catalog.cities || []).map((item) => ({ type: 'City', query: item.name }));
@@ -55,7 +59,7 @@ function renderSearchSuggestions() {
   `).join('');
 }
 
-function updateSearchSuggestions(show = document.activeElement?.id === 'search-box') {
+function updateSearchSuggestions(show = document.activeElement?.id === 'search-box' && !searchSuggestionsDismissed) {
   const menu = document.querySelector('#search-suggestions');
   if (!menu) return;
   menu.innerHTML = show ? renderSearchSuggestions() : '';
@@ -106,24 +110,7 @@ function applySavedSearchOnly(id) {
 }
 
 function removeRefinement(button) {
-  const action = button.dataset.removeRefinement;
-  if (action === 'q') state.request.q = '';
-  if (action === 'saved') {
-    state.request.savedSearchIds = (state.request.savedSearchIds || []).filter((id) => id !== button.dataset.value);
-  }
-  if (action === 'filter') {
-    const key = button.dataset.key;
-    if (!key) return;
-    const value = button.dataset.value;
-    if (Array.isArray(state.request.filters[key]) && value !== undefined) {
-      state.request.filters[key] = state.request.filters[key].filter((item) => String(item) !== value);
-    } else {
-      delete state.request.filters[key];
-    }
-  }
-  if (action === 'geo') delete state.request.geo;
-  if (action === 'viewport') delete state.request.viewport;
-  state.request.page = 1;
+  state.request = removeFacetCriteria(state.request, { action: button.dataset.removeRefinement, key: button.dataset.key, value: button.dataset.value });
   updateToolbarControls();
   runSearch();
 }
@@ -135,17 +122,7 @@ function setRange(key, value) {
 }
 
 function clearFilters() {
-  state.request = {
-    provider: state.request.provider,
-    q: '',
-    mode: 'hybrid',
-    filters: {},
-    sort: 'relevance',
-    page: 1,
-    pageSize: RESULT_PAGE_SIZE,
-    includeFacets: true,
-    savedSearchIds: []
-  };
+  state.request = clearFacetCriteria(state.request);
   updateToolbarControls();
   runSearch();
 }
@@ -167,15 +144,32 @@ function toggleViewport(checked) {
   runSearch();
 }
 
-function requestBody() {
+function requestBody(includeMap = false, mapOnly = false) {
   const filters = Object.fromEntries(
     Object.entries(state.request.filters || {}).filter(([, value]) => !(Array.isArray(value) && value.length === 0) && value !== undefined && value !== '')
   );
-  return { ...state.request, filters };
+  return { ...state.request, filters, includeMap, mapOnly };
+}
+function visibleMapDataNeeded() {
+  if (window.matchMedia('(max-width:760px)').matches) return state.mobileResultsView === 'map';
+  const desktopView = window.innerWidth <= 1180 && state.desktopResultsView === 'split' ? 'list' : state.desktopResultsView;
+  return desktopView !== 'list';
 }
 
 let searchTimer;
 let mapResizeBound = false;
+let mapModulePromise;
+async function renderMapIfVisible(refresh = false) {
+  const element = document.querySelector('#result-map');
+  if (!element?.getClientRects().length) return;
+  mapModulePromise ??= Promise.all([import('leaflet/dist/leaflet.css'), import('./search/map.js')]).then(([, module]) => module);
+  const map = await mapModulePromise;
+  map.renderLeafletMap();
+}
+async function resizeVisibleMap() {
+  const map = await mapModulePromise;
+  map?.resizeVisibleMap();
+}
 function scheduleSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(runSearch, 180);
@@ -184,31 +178,63 @@ function scheduleSearch() {
 export async function runSearch() {
   clearTimeout(searchTimer);
   const requestId = ++state.searchRequestId;
+  const includeMap = visibleMapDataNeeded();
   state.isLoadingMore = false;
   state.mobileListScrollTop = 0;
   state.loadMoreError = null;
   state.selectedHitId = null;
   state.isSearching = true;
   state.searchError = null;
-  // Hide stale results rather than showing them as matches for the new criteria.
-  state.response = null;
   syncUrl();
   renderSearchPage();
   void refreshStatus();
   try {
-    const response = await api('/api/search', { method: 'POST', body: JSON.stringify(requestBody()) });
+    const response = await api('/api/search', { method: 'POST', body: JSON.stringify(requestBody(includeMap)) });
     if (requestId !== state.searchRequestId) return;
-    state.response = response;
+    state.response = { ...response, mapDataIncluded: includeMap };
   } catch (error) {
     if (requestId !== state.searchRequestId) return;
     state.searchError = error.message;
   } finally {
     if (requestId === state.searchRequestId) {
       state.isSearching = false;
-      renderSearchPage();
+      renderSearchPage(true);
       void refreshStatus();
     }
   }
+}
+
+let mapDataLoad;
+let mapDataLoadSearchId;
+async function loadMapData() {
+  const mapColumn = document.querySelector('.map-column');
+  if (!mapColumn || !state.response || state.response.mapDataIncluded) return;
+  const requestId = state.searchRequestId;
+  if (mapDataLoad && mapDataLoadSearchId === requestId) return mapDataLoad;
+  mapDataLoadSearchId = requestId;
+  mapColumn.innerHTML = renderResultMap();
+  void renderMapIfVisible();
+  mapDataLoad = (async () => {
+    try {
+      const response = await api('/api/search', { method: 'POST', body: JSON.stringify(requestBody(true, true)) });
+      if (requestId !== state.searchRequestId) return;
+      state.response = { ...state.response, mapHits: response.mapHits, mapDataIncluded: true };
+      const currentMapColumn = document.querySelector('.map-column');
+      if (currentMapColumn) currentMapColumn.innerHTML = renderResultMap();
+      void renderMapIfVisible(true);
+    } catch (error) {
+      if (requestId !== state.searchRequestId) return;
+      const currentMapColumn = document.querySelector('.map-column');
+      if (currentMapColumn) currentMapColumn.innerHTML = '<section class="result-map" aria-label="Map of visible results"><div class="leaflet-result-map map-placeholder" role="alert">Map data unavailable: ' +
+        escapeHtml(error.message) + '</div><p class="map-feedback"><button class="btn btn-sm btn-outline" id="retry-map-data" type="button">Retry map</button></p></section>';
+    } finally {
+      if (mapDataLoadSearchId === requestId) {
+        mapDataLoad = undefined;
+        mapDataLoadSearchId = undefined;
+      }
+    }
+  })();
+  return mapDataLoad;
 }
 
 export async function loadBootstrap() {
@@ -240,12 +266,14 @@ export async function loadSavedSearches() {
 }
 
 function updateToolbarControls() {
-  const activeCount = Object.values(state.request.filters).reduce((count,value) => count + (Array.isArray(value) ? value.length : value !== undefined && value !== '' ? 1 : 0), 0) + (state.request.savedSearchIds?.length || 0) + Number(Boolean(state.request.geo)) + Number(Boolean(state.request.viewport));
+  const activeCount = activeFilters(state.request).length;
   const countBadge = document.querySelector('#active-filter-count');
   if (countBadge) { countBadge.textContent = String(activeCount); countBadge.hidden = !activeCount; countBadge.setAttribute('aria-label', `${activeCount} active filters`); }
 
   const searchBoxInput = document.querySelector('#search-box');
   if (searchBoxInput && searchBoxInput.value !== (state.request.q || '')) searchBoxInput.value = state.request.q || '';
+  const queryClear = document.querySelector('#clear-query');
+  if (queryClear) queryClear.hidden = !state.request.q;
   const providerSelect = document.querySelector('#provider');
   if (providerSelect) providerSelect.value = state.request.provider;
   const sortSelect = document.querySelector('#sort');
@@ -261,19 +289,16 @@ function wireSearchToolbar() {
     runSearch();
   });
   document.querySelector('#search-box')?.addEventListener('input', (event) => {
+    searchSuggestionsDismissed = false;
     state.request.q = event.target.value;
     state.request.page = 1;
+    updateToolbarControls();
     updateSearchSuggestions(true);
     scheduleSearch();
   });
-  document.querySelector('#search-box')?.addEventListener('focus', () => updateSearchSuggestions(true));
+  document.querySelector('#search-box')?.addEventListener('focus', () => updateSearchSuggestions());
   document.querySelector('#search-box')?.addEventListener('blur', () => {
     setTimeout(() => updateSearchSuggestions(false), 120);
-  });
-  document.querySelector('#sort')?.addEventListener('change', (event) => {
-    state.request.sort = event.target.value;
-    state.request.page = 1;
-    runSearch();
   });
   document.querySelector('#search-mode')?.addEventListener('change', (event) => {
     state.request.mode = event.target.value;
@@ -299,6 +324,12 @@ function wireSearchDelegates() {
     const debug = document.querySelector('#search-debug');
     if (debug) setHtmlPreservingFocus(debug, renderDebug(requestBody));
   });
+  app.addEventListener('change', (event) => {
+    if (event.target?.id !== 'sort') return;
+    state.request.sort = event.target.value;
+    state.request.page = 1;
+    runSearch();
+  });
   app.addEventListener('click', async (event) => {
     try {
     if (!(event.target instanceof Element)) return;
@@ -315,12 +346,40 @@ function wireSearchDelegates() {
         return renderSearchPage();
       }
       if (target.dataset.geo !== undefined) return applyGeoPreset(target.dataset.geo);
-      if (target.id === 'clear-filters' || target.id === 'empty-clear') return clearFilters();
+      if (target.id === 'clear-query') {
+        searchSuggestionsDismissed = true;
+        state.request = clearQueryCriteria(state.request);
+        updateToolbarControls();
+        document.querySelector('#search-box')?.focus();
+        updateSearchSuggestions(false);
+        return runSearch();
+      }
+      if (target.id === 'clear-filters' || target.id === 'clear-all-filters' || target.id === 'empty-clear') return clearFilters();
       if (target.id === 'retry-search') return runSearch();
+      if (target.id === 'retry-map-data') return loadMapData();
       if (target.id === 'retry-saved') return loadSavedSearches();
       if (target.id === 'keyword-recovery') { state.request.mode = 'keyword'; return runSearch(); }
       if (target.id === 'close-filter-panel') {
         setFilterDrawer(false);
+        return;
+      }
+      const desktopView = target?.dataset.desktopView;
+      if (desktopView) {
+        state.desktopResultsView = desktopView;
+        state.desktopViewAuto = false;
+        document.querySelector('#results-workspace').dataset.desktopView = desktopView;
+        document.querySelectorAll('[data-desktop-view]').forEach((button) => {
+          if (button.tagName !== 'BUTTON') return;
+          const active = button.dataset.desktopView === desktopView;
+          button.classList.toggle('is-active', active);
+          button.setAttribute('aria-pressed', String(active));
+        });
+        if (desktopView !== 'list' && !state.response?.mapDataIncluded) {
+          void loadMapData();
+          return;
+        }
+        void renderMapIfVisible();
+        requestAnimationFrame(() => { void resizeVisibleMap(); });
         return;
       }
       if (target.id === 'mobile-view-toggle') {
@@ -331,6 +390,12 @@ function wireSearchDelegates() {
         document.querySelector('#results-workspace').dataset.mobileView = state.mobileResultsView;
         target.textContent = showMap ? 'List' : 'Map';
         target.setAttribute('aria-label', showMap ? 'Show list' : 'Show map');
+        if (showMap && !state.response?.mapDataIncluded) {
+          target.setAttribute('aria-pressed', 'true');
+          void loadMapData();
+          return;
+        }
+        void renderMapIfVisible();
         target.setAttribute('aria-pressed', String(showMap));
         requestAnimationFrame(() => {
           resizeVisibleMap();
@@ -354,7 +419,7 @@ function wireSearchDelegates() {
       if (target.id === 'save-search') {
         const name = prompt('Saved search name', state.request.q || 'Zero-hit saved search');
         if (!name) return;
-        const saved = await api('/api/saved-searches', { method: 'POST', body: JSON.stringify({ name, criteria: requestBody() }) });
+        const saved = await api('/api/saved-searches', { method: 'POST', body: JSON.stringify({ name, criteria: requestBody(true) }) });
         await loadSavedSearches();
         if (!state.savedSearches.some((search) => search.id === saved.id)) state.savedSearches.unshift(saved);
         applySavedSearchOnly(saved.id);
@@ -387,6 +452,13 @@ function wireSearchDelegates() {
     } catch (error) { state.operationError = error.message; renderSearchPage(); }
   });
   app.addEventListener('keydown', (event) => {
+    const openInformation = event.target.closest?.('.system-info[open]');
+    if (event.key === 'Escape' && openInformation) {
+      event.preventDefault();
+      openInformation.open = false;
+      openInformation.querySelector('summary')?.focus();
+      return;
+    }
     if (handleFilterDrawerKey(event)) return;
     if (event.key === 'Escape') {
       updateSearchSuggestions(false);
@@ -403,7 +475,14 @@ function wireSearchDelegates() {
   });
 }
 
-function renderSearchPage() {
+function renderSearchPage(refreshMap = false) {
+  if (window.innerWidth <= 1180 && state.desktopResultsView === 'split') {
+    state.desktopResultsView = 'list';
+    state.desktopViewAuto = true;
+  } else if (window.innerWidth > 1180 && state.desktopViewAuto && state.desktopResultsView === 'list') {
+    state.desktopResultsView = 'split';
+    state.desktopViewAuto = false;
+  }
   if (!document.querySelector('#search-filters')) {
     app.innerHTML = `
       ${renderToolbar()}
@@ -421,21 +500,34 @@ function renderSearchPage() {
     wireSearchToolbar();
     wireSearchDelegates();
     if (!mapResizeBound) {
-      window.matchMedia('(max-width:760px)').addEventListener('change', () => { setFilterDrawer(false, false); requestAnimationFrame(resizeVisibleMap); });
+      window.matchMedia('(max-width:760px)').addEventListener('change', () => { setFilterDrawer(false, false); placeSearchInformation(document, window.matchMedia('(max-width:760px)').matches); requestAnimationFrame(() => { void resizeVisibleMap(); }); });
+      window.matchMedia('(max-width:1180px)').addEventListener('change', () => { renderSearchPage(); requestAnimationFrame(() => { void resizeVisibleMap(); }); });
       mapResizeBound = true;
     }
   }
   updateToolbarControls();
   updateSystemStrip();
+  // Park the shared disclosure before replacing the drawer's contents.
+  const information = document.querySelector('#system-summary');
+  const informationFocus = information?.contains(document.activeElement) ? document.activeElement.id : null;
+  if (information) document.querySelector('.toolbar-heading')?.append(information);
   const filterScroll = document.querySelector('#filter-panel-content .panel')?.scrollTop || 0;
   setHtmlPreservingFocus(document.querySelector('#filter-panel-content'), renderFilters());
   document.querySelector('#filter-panel-content .panel').scrollTop = filterScroll;
+  placeSearchInformation(document, window.matchMedia('(max-width:760px)').matches, informationFocus);
+  const existingMapRegion = document.querySelector('.map-column > .result-map');
+  setHtmlPreservingFocus(document.querySelector('#search-results'), renderResults());
+  const replacementMapRegion = document.querySelector('.map-column > .result-map');
+  if (existingMapRegion && replacementMapRegion && state.resultMap?.getContainer() === existingMapRegion.querySelector('#result-map')) {
+    replacementMapRegion.replaceWith(existingMapRegion);
+  }
   syncFilterDrawer();
-  document.querySelector('#search-results').innerHTML = renderResults();
   setHtmlPreservingFocus(document.querySelector('#search-debug'), renderDebug(requestBody));
   syncHitDialog();
   wireSearchContent();
   updateSearchSuggestions();
-  renderLeafletMap();
+  void renderMapIfVisible(refreshMap);
   setupVirtualizedResults(requestBody);
 }
+
+export function prepareSearchShell() { renderSearchPage(); }

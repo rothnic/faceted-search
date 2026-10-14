@@ -439,6 +439,11 @@ export class RealServices {
       if (before.pending) throw new Error('Source/index updates are pending. Check System and retry shortly.');
       const pageResult = await this.searchExternal(provider, request, [], [], scopeIds);
       if (pageResult.totalHits > 1000) throw new Error('Native result set exceeds the 1,000-document demo limit.');
+      if (request.includeMap === false) return {
+        hits: pageResult.hits, mapHits: [], totalHits: pageResult.totalHits,
+        totalInventory: before.total, facets: request.includeFacets ? pageResult.facets : {},
+        debug: { ...pageResult.debug, notes: ['Map marker data is deferred until a map view is requested.'] }
+      };
       const all: HouseSearchHit[] = [];
       const requests: unknown[] = [pageResult.debug.rawRequest];
       const responses: unknown[] = [pageResult.debug.rawResponse];
@@ -452,7 +457,7 @@ export class RealServices {
       const after = await snapshot();
       if (after.pending || after.version !== before.version) throw new Error('Source data changed during native search; retry after indexing settles.');
       if (all.length !== pageResult.totalHits || new Set(all.map((hit) => hit.id)).size !== all.length) throw new Error('Native index/source result set is incomplete; run a source backfill.');
-      return { hits: pageResult.hits, mapHits: all, totalHits: pageResult.totalHits, facets: request.includeFacets ? pageResult.facets : {}, debug: {
+      return { hits: pageResult.hits, mapHits: all, totalHits: pageResult.totalHits, totalInventory: before.total, facets: request.includeFacets ? pageResult.facets : {}, debug: {
         execution: request.mode === 'keyword' || !request.q?.trim() ? 'external-keyword' as const : request.mode === 'semantic' ? 'external-semantic' as const : 'external-hybrid' as const,
         rawRequest: requests, rawResponse: responses,
         notes: ['Filtering, ranking, facet counts and total counts come from the selected engine. Map and saved-scope IDs use its complete bounded result set. Native scores are engine-specific.']

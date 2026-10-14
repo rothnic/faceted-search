@@ -1,7 +1,6 @@
-import 'leaflet/dist/leaflet.css';
 import './styles.css';
-import { app, escapeHtml } from './core.js';
-import { loadBootstrap, loadSavedSearches, runSearch } from './search-page.js';
+import { app, escapeHtml, state } from './core.js';
+import { loadBootstrap, loadSavedSearches, prepareSearchShell, runSearch } from './search-page.js';
 import { renderProviders } from './pages/providers.js';
 import { renderSystem } from './pages/system.js';
 import { renderSchema } from './pages/schema.js';
@@ -14,15 +13,18 @@ async function route() {
   });
   if (location.pathname === '/schema') return renderSchema();
   if (location.pathname === '/system') return renderSystem();
-  app.innerHTML = '<section class="panel" role="status">Connecting to the search API…</section>';
-  await loadBootstrap();
-  if (location.pathname === '/providers') return renderProviders();
-  if (location.pathname === '/saved-searches') return renderSavedSearches();
-  if (location.pathname === '/search/instant/typesense') return (await import('./pages/instant.js')).renderInstant('typesense');
-  if (location.pathname === '/search/instant/meilisearch') return (await import('./pages/instant.js')).renderInstant('meilisearch');
+  if (location.pathname === '/providers') { app.innerHTML = '<section class="panel" role="status">Connecting to the search API…</section>'; await loadBootstrap(); return renderProviders(); }
+  if (location.pathname === '/saved-searches') { app.innerHTML = '<section class="panel" role="status">Connecting to the search API…</section>'; await loadBootstrap(); return renderSavedSearches(); }
+  if (location.pathname === '/search/instant/typesense' || location.pathname === '/search/instant/meilisearch') {
+    app.innerHTML = '<section class="panel" role="status">Connecting to the search API…</section>';
+    await loadBootstrap();
+    return (await import('./pages/instant.js')).renderInstant(location.pathname.endsWith('typesense') ? 'typesense' : 'meilisearch');
+  }
   startStatusPolling();
+  prepareSearchShell();
+  await loadBootstrap();
   void loadSavedSearches();
-  return runSearch();
+  if (!state.isSearching) return runSearch();
 }
 
 route().catch((error) => {

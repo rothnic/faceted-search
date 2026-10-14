@@ -30,7 +30,7 @@ The in-memory demo uses a pinned MiniLM CPU model. In the connected stack, Postg
 - **Facet rail** - City, neighborhood, school district, property type, bedrooms, amenities, and listing status are exposed as left-rail filters.
 - **Bounded facet lists** - Long facet groups are capped by default with a show-more control, while selected values remain visible.
 - **Range filters** - Price, square feet, lot size, and year-built filters update the same search contract as categorical facets.
-- **Removable chips** - Active query, saved-search, facet, range, geo, and viewport refinements appear above results and can be removed in place.
+- **Removable filter chips** - Active manual facets, ranges, geo, and viewport refinements appear above results and can be removed in place. Query clearing uses the search input; saved-search scopes use their checkboxes. Clearing filters preserves the query and checked scopes.
 - **Clickable result chips** - Listing chips such as `garage` can apply matching filters directly from a result card.
 
 ### Saved Searches
@@ -136,6 +136,8 @@ TEST_DISPOSABLE_STACK=1 DEMO_URL=http://127.0.0.1:5173 npm run verify:full-stack
 `npm run verify:embeddings` exercises actual CPU inference and API retrieval, offline loading, cache invalidation, semantic saved searches, and error recovery in disposable local processes. It does not require the external Docker stack.
 
 `verify:full-stack` resets listings and saved searches and edits a fixture listing. Both the explicit target and disposable-stack opt-in are required before it makes requests. Do not point it at a valuable or shared dataset. Seeding is also a reset. For owned-process, all-provider native acceptance, use the guarded commands in [automatic embeddings](docs/automatic-embeddings.md#verification-and-measured-costs).
+
+Run `npm run test:unit` for the Node contracts covering independent query/filter clearing, saved-scope preservation, responsive controls and focus placement. GitHub CI runs these before the browser checks.
 
 The Playwright suite covers live debounced search, search suggestions, virtualized infinite results, facet limiting, removable refinement chips, clickable result chips, saved-search scoping, provider switching, direct InstantSearch routes, and external sync controls.
 

@@ -256,8 +256,8 @@ export class PostgresSearch {
           'schoolDistrict',school_district,'propertyType',property_type,'listingStatus',listing_status,
           'createdAt',created_at,'updatedAt',updated_at,'city',city,'neighborhood',neighborhood,
           'amenities',amenities,'tags',tags,'semanticText',semantic_text)) ORDER BY position) FROM paginated), '[]'::jsonb) AS hits,
-        COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id',id,'title',title,'lat',lat,'lng',lng,'price',price,
-          'city',city,'neighborhood',neighborhood,'propertyType',property_type,'listingStatus',listing_status)) ORDER BY position) FROM ordered), '[]'::jsonb) AS map_hits,
+        ${request.includeMap === false ? "'[]'::jsonb" : `COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id',id,'title',title,'lat',lat,'lng',lng,'price',price,
+          'city',city,'neighborhood',neighborhood,'propertyType',property_type,'listingStatus',listing_status)) ORDER BY position) FROM ordered), '[]'::jsonb)`} AS map_hits,
         ${request.includeFacets ? `jsonb_build_object('city','[]'::jsonb,'neighborhood','[]'::jsonb,'schoolDistrict','[]'::jsonb,
           'propertyType','[]'::jsonb,'listingStatus','[]'::jsonb,'bedrooms','[]'::jsonb,'amenities','[]'::jsonb)
           || COALESCE((SELECT jsonb_object_agg(field,buckets) FROM facet_groups),'{}'::jsonb)` : "'{}'::jsonb"} AS facets)
