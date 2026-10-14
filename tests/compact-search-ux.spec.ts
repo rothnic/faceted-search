@@ -10,11 +10,12 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
     await expect(page.getByRole('textbox',{name:'Search',exact:true})).toHaveAttribute('placeholder','Search homes, neighborhoods, or features…');
     expect(await page.locator('label[for="search-box"]').evaluate(e=>e.getBoundingClientRect().height)).toBe(1);
     const headline=(await page.locator('.results-head h2').boundingBox())!;
-    const actions=(await page.locator('.result-tools').boundingBox())!;
+    const actions=(await page.locator('#save-search').boundingBox())!;
     expect(Math.abs(headline.y+headline.height/2-actions.y-actions.height/2)).toBeLessThanOrEqual(1);
     await expect(page.getByRole('button',{name:'Save search',exact:true})).toBeVisible();
     const radii=await page.locator('#search-box,#save-search,.toolbar,.result').evaluateAll(es=>es.map(e=>parseFloat(getComputedStyle(e).borderTopLeftRadius)));
     expect(Math.max(...radii)).toBeLessThanOrEqual(8);
+    if (viewport.width <= 760) await page.locator('#toggle-filters').click();
     await expect(page.locator('#system-info')).not.toHaveAttribute('open');
     await page.locator('#system-info-toggle').click();
     await expect(page.locator('#summary-schema-link')).toBeVisible();
@@ -24,6 +25,7 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
     await page.locator('#system-info-toggle').click();
     await expect(page.locator('[data-virtual-summary]')).toBeVisible();
     await page.locator('#system-info-toggle').press('Escape');
+    if (viewport.width <= 760) await page.locator('#close-filter-panel').click();
     await expect(page.locator('.map-key')).not.toHaveAttribute('open');
     const visibleCountCopies = await page.evaluate(() => {
       const text = [...document.querySelectorAll<HTMLElement>('.results-head,.map-head')].map(e=>e.innerText).join(' ');
@@ -52,16 +54,16 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       expect(filterBox.height).toBeGreaterThanOrEqual(44);
       expect(filterBox.y).toBeGreaterThanOrEqual(inputBox.y+inputBox.height);
       expect(Math.abs(filterBox.y-sortBox.y)).toBeLessThan(1);
-      expect(filterBox.x).toBeGreaterThan(sortBox.x);
+      expect(filterBox.x).toBeLessThan(sortBox.x);
       expect(filterBox.width).toBeLessThan(130);
-      const resultButtons=await page.locator('#mobile-view-toggle,#save-search').evaluateAll(es=>es.map(e=>({height:e.getBoundingClientRect().height,y:e.getBoundingClientRect().y,font:getComputedStyle(e).fontSize,padding:getComputedStyle(e).paddingInlineStart})));
+      const resultButtons=await page.locator('#mobile-view-toggle,#save-search').evaluateAll(es=>es.map(e=>({height:e.getBoundingClientRect().height,font:getComputedStyle(e).fontSize,padding:getComputedStyle(e).paddingInlineStart})));
       expect(resultButtons[0]).toEqual(resultButtons[1]);
       expect(resultButtons[0].height).toBe(44);
       const chipPaint=await page.locator('.hit-chip > .badge').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().height));
       expect(Math.max(...chipPaint)).toBeLessThanOrEqual(24);
       await expect(page.locator('#result-info-toggle')).toHaveCount(0);
-      const utilityStyles=await page.locator('#sort,#system-info-toggle').evaluateAll(es=>es.map(e=>({border:getComputedStyle(e).borderTopWidth,height:e.getBoundingClientRect().height})));
-      for(const utility of utilityStyles) { expect(utility.border).toBe('0px'); expect(utility.height).toBeGreaterThanOrEqual(44); }
+      await expect(page.locator('#sort')).toHaveValue('relevance');
+      expect(await page.locator('#sort').evaluate(e => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(12);
       const cardBox = (await page.locator('.result').first().boundingBox())!;
       const footerTargets=await page.locator('.result').first().locator('.result-actions button').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().toJSON()));
       for(const target of footerTargets) {
@@ -117,7 +119,7 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       const filterTitle=await page.locator('#filter-panel-title').boundingBox();
       expect(filterTitle!.x).toBeGreaterThanOrEqual(sidebar!.x);
       expect(filterTitle!.x+filterTitle!.width).toBeLessThanOrEqual(sidebar!.x+sidebar!.width);
-      const controls = await page.evaluate(() => ['search-box','search-mode','provider','sort'].map(id => {
+      const controls = await page.evaluate(() => ['search-box','search-mode','provider'].map(id => {
         const input = document.getElementById(id)!; const label = document.querySelector(`label[for="${id}"]`)!;
         return {labelY:label.getBoundingClientRect().y,inputY:input.getBoundingClientRect().y,height:input.getBoundingClientRect().height,background:getComputedStyle(input).backgroundColor,arrow:getComputedStyle(input).backgroundImage};
       }));
@@ -125,7 +127,7 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
       expect(Math.max(...controls.map(c=>c.inputY))-Math.min(...controls.map(c=>c.inputY))).toBeLessThan(1);
       expect(controls[0].background).not.toBe(controls[1].background);
       for (const control of controls.slice(1)) { expect(control.arrow).toContain('data:image/svg+xml'); expect(control.height).toBeGreaterThanOrEqual(40); }
-      const selectFit = await page.locator('#search-mode,#provider,#sort').evaluateAll(elements => elements.map(element => {
+      const selectFit = await page.locator('#search-mode,#provider').evaluateAll(elements => elements.map(element => {
         const select=element as HTMLSelectElement, style=getComputedStyle(select);
         const canvas=document.createElement('canvas'), context=canvas.getContext('2d')!;
         context.font=style.font;

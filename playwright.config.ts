@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
+  testIgnore: ['**/unit/**'], // Node-only contracts run with node --test tests/unit/*.test.mjs
   timeout: 30_000,
   expect: { timeout: 10_000 },
   webServer: {

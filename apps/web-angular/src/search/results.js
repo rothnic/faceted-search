@@ -7,6 +7,7 @@ import {
   state,
   titleLabel
 } from '../core.js';
+import { renderResultsToolbar } from './controls.js';
 import { activeFilters } from './active-filters.js';
 import { renderResultMap } from './map.js';
 
@@ -35,16 +36,12 @@ export function renderResultCard(hit) {
 
 export function renderResults() {
   const response = state.response;
-  if (state.searchError) return `<section class="panel"><h2>Search unavailable</h2><p class="notice error" role="alert">${escapeHtml(state.searchError)}</p><p>Your criteria are preserved. You can retry or try keyword search.</p><div class="action-row"><button class="btn btn-sm btn-outline" id="retry-search">Retry search</button><button class="btn btn-sm btn-outline" id="keyword-recovery">Use keyword search</button></div></section>`;
-  if (!response) return '<section class="panel" aria-busy="true"><h2>Results</h2><p role="status">Searching… Semantic searches may need to download and initialize the local CPU model on first use.</p><div class="loading-skeleton" aria-hidden="true"></div><div class="loading-skeleton" aria-hidden="true"></div></section>';
+  const toolbar = renderResultsToolbar({ request: state.request, response, view: state.mobileResultsView, facetCount: activeFilters(state.request).length, chips: renderRefinements() });
+  if (state.searchError) return `<section class="results-panel">${toolbar}<section class="panel"><h2>Search unavailable</h2><p class="notice error" role="alert">${escapeHtml(state.searchError)}</p><p>Your criteria are preserved. You can retry or try keyword search.</p><div class="action-row"><button class="btn btn-sm btn-outline" id="retry-search">Retry search</button><button class="btn btn-sm btn-outline" id="keyword-recovery">Use keyword search</button></div></section></section>`;
+  if (!response) return `<section class="results-panel">${toolbar}<section class="panel" aria-busy="true"><h2>Results</h2><p role="status">Searching… Semantic searches may need to download and initialize the local CPU model on first use.</p><div class="loading-skeleton" aria-hidden="true"></div><div class="loading-skeleton" aria-hidden="true"></div></section></section>`;
   return `
     <section class="results-panel">
-      <div class="results-head">
-        <h2>Homes <span class="result-total">${response.totalHits}</span></h2>
-        ${renderRefinements()}
-        <div class="result-tools">${response.mapHits?.length ? `<button class="btn btn-sm btn-ghost mobile-view-toggle" id="mobile-view-toggle" aria-controls="results-workspace" aria-pressed="${state.mobileResultsView === 'map'}" aria-label="${state.mobileResultsView === 'map' ? 'Show list' : 'Show map'}">${state.mobileResultsView === 'map' ? 'List' : 'Map'}</button>` : ''}<button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button>
-        </div>
-      </div>
+      ${toolbar}
       ${(response.debug?.warnings || []).map((warning) => `<p class="notice execution-warning">${escapeHtml(warning)}</p>`).join('')}
       <div class="results-workspace" id="results-workspace" data-mobile-view="${response.mapHits?.length ? state.mobileResultsView : 'list'}"><div class="listing-column">
       ${response.hits.length ? `

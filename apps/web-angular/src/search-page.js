@@ -17,6 +17,7 @@ import { renderDebug, renderResults } from './search/results.js';
 import { refreshStatus, updateSystemStrip } from './system-status.js';
 import { setupVirtualizedResults } from './search/virtual-results.js';
 
+import { placeSearchInformation } from './search/responsive-controls.js';
 import { activeFilters, clearFacetCriteria, clearQueryCriteria, removeFacetCriteria } from './search/active-filters.js';
 
 let searchDelegatesWired = false;
@@ -248,11 +249,6 @@ function wireSearchToolbar() {
   document.querySelector('#search-box')?.addEventListener('blur', () => {
     setTimeout(() => updateSearchSuggestions(false), 120);
   });
-  document.querySelector('#sort')?.addEventListener('change', (event) => {
-    state.request.sort = event.target.value;
-    state.request.page = 1;
-    runSearch();
-  });
   document.querySelector('#search-mode')?.addEventListener('change', (event) => {
     state.request.mode = event.target.value;
     state.request.page = 1;
@@ -276,6 +272,12 @@ function wireSearchDelegates() {
   window.addEventListener('system-status-updated', () => {
     const debug = document.querySelector('#search-debug');
     if (debug) setHtmlPreservingFocus(debug, renderDebug(requestBody));
+  });
+  app.addEventListener('change', (event) => {
+    if (event.target?.id !== 'sort') return;
+    state.request.sort = event.target.value;
+    state.request.page = 1;
+    runSearch();
   });
   app.addEventListener('click', async (event) => {
     try {
@@ -372,6 +374,13 @@ function wireSearchDelegates() {
     } catch (error) { state.operationError = error.message; renderSearchPage(); }
   });
   app.addEventListener('keydown', (event) => {
+    const openInformation = event.target.closest?.('.system-info[open]');
+    if (event.key === 'Escape' && openInformation) {
+      event.preventDefault();
+      openInformation.open = false;
+      openInformation.querySelector('summary')?.focus();
+      return;
+    }
     if (handleFilterDrawerKey(event)) return;
     if (event.key === 'Escape') {
       updateSearchSuggestions(false);
@@ -406,17 +415,22 @@ function renderSearchPage() {
     wireSearchToolbar();
     wireSearchDelegates();
     if (!mapResizeBound) {
-      window.matchMedia('(max-width:760px)').addEventListener('change', () => { setFilterDrawer(false, false); requestAnimationFrame(resizeVisibleMap); });
+      window.matchMedia('(max-width:760px)').addEventListener('change', () => { setFilterDrawer(false, false); placeSearchInformation(document, window.matchMedia('(max-width:760px)').matches); requestAnimationFrame(resizeVisibleMap); });
       mapResizeBound = true;
     }
   }
   updateToolbarControls();
   updateSystemStrip();
+  // Park the shared disclosure before replacing the drawer's contents.
+  const information = document.querySelector('#system-summary');
+  const informationFocus = information?.contains(document.activeElement) ? document.activeElement.id : null;
+  if (information) document.querySelector('.toolbar-heading')?.append(information);
   const filterScroll = document.querySelector('#filter-panel-content .panel')?.scrollTop || 0;
   setHtmlPreservingFocus(document.querySelector('#filter-panel-content'), renderFilters());
   document.querySelector('#filter-panel-content .panel').scrollTop = filterScroll;
+  placeSearchInformation(document, window.matchMedia('(max-width:760px)').matches, informationFocus);
+  setHtmlPreservingFocus(document.querySelector('#search-results'), renderResults());
   syncFilterDrawer();
-  document.querySelector('#search-results').innerHTML = renderResults();
   setHtmlPreservingFocus(document.querySelector('#search-debug'), renderDebug(requestBody));
   syncHitDialog();
   wireSearchContent();
