@@ -26,9 +26,9 @@ test('Sort shows each current value rather than an icon-only field', () => {
   }
 });
 test('one results toolbar exposes honest N, one Sort and independent filter/view/save actions', () => {
-  const html=renderResultsToolbar({request,response:{totalHits:35,mapHits:[{id:'one'}]},view:'list',facetCount:2,chips:'<div class="refinements">facet</div>'});
+  const html=renderResultsToolbar({request,response:{totalHits:35,totalInventory:250,mapHits:[{id:'one'}]},view:'list',facetCount:2,chips:'<div class="refinements">facet</div>'});
   for(const id of ['sort','toggle-filters','mobile-view-toggle','save-search']) assert.equal(html.split(`id="${id}"`).length-1,1);
-  assert.match(html,/Matching homes">35/); assert.ok(!html.includes(' of '));
+  assert.match(html,/Matching homes">35/); assert.match(html,/of 250/);
   assert.match(html,/2 active filters/); assert.match(html,/aria-label="Show map"/);
   assert.match(html,/class="refinements"/);
 });
@@ -36,7 +36,7 @@ test('pending and zero states preserve usable filter/sort controls without inven
   const pending=renderResultsToolbar({request,response:null,view:'list',facetCount:0,chips:''});
   assert.match(pending,/Matching homes">…/); assert.match(pending,/id="save-search" disabled/);
   assert.ok(!pending.includes('class="refinements"'));
-  const empty=renderResultsToolbar({request,response:{totalHits:0,mapHits:[]},view:'map',facetCount:0,chips:''});
-  assert.match(empty,/Matching homes">0/); assert.match(empty,/aria-label="Show map" disabled/);
+  const empty=renderResultsToolbar({request,response:{totalHits:0,totalInventory:250,mapHits:[]},view:'map',facetCount:0,chips:''});
+  assert.match(empty,/Matching homes">0/); assert.match(empty,/of 250/); assert.match(empty,/aria-label="Show list"/);
   assert.ok(!empty.includes('id="save-search" disabled'));
 });

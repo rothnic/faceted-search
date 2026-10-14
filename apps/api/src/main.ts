@@ -353,7 +353,8 @@ async function performSearch(request: HouseSearchRequest): Promise<HouseSearchRe
   if (realServices) {
     const result = await realServices.search(request, scopeIds ? [...scopeIds] : undefined);
     return { provider: provider.id, providerLabel: provider.label, ...result,
-      mapHits: toMapHits(result.mapHits), page: request.page, pageSize: request.pageSize,
+      totalInventory: result.totalInventory ?? searchableHouses.length,
+      hits: request.mapOnly ? [] : result.hits, mapHits: toMapHits(result.mapHits), page: request.page, pageSize: request.pageSize,
       processingTimeMs: Number((performance.now()-started).toFixed(1)) };
   }
   return localSearchResponse(request, provider, started, searchableHouses, scopeIds, ['Explicit in-memory fixture mode; this is not a real-provider comparison.']);
@@ -409,9 +410,10 @@ async function localSearchResponse(
   return {
     provider: provider.id,
     providerLabel: provider.label,
-    hits,
-    mapHits: toMapHits(sorted),
+    hits: request.mapOnly ? [] : hits,
+    mapHits: request.includeMap === false ? [] : toMapHits(sorted),
     totalHits: allMatches.length,
+    totalInventory: searchableHouses.length,
     page,
     pageSize,
     facets: request.includeFacets ? buildFacets(allMatches) : {},
@@ -576,6 +578,12 @@ function defaultRequest(body: Partial<HouseSearchRequest>): HouseSearchRequest {
   if (body.mode !== undefined && !['keyword', 'semantic', 'hybrid'].includes(body.mode)) {
     throw Object.assign(new Error('Search mode must be keyword, semantic, or hybrid.'), { statusCode: 400 });
   }
+  if (body.includeMap !== undefined && typeof body.includeMap !== 'boolean') {
+    throw Object.assign(new Error('includeMap must be a boolean.'), { statusCode: 400 });
+  }
+  if (body.mapOnly !== undefined && typeof body.mapOnly !== 'boolean') {
+    throw Object.assign(new Error('mapOnly must be a boolean.'), { statusCode: 400 });
+  }
   const invalid = (message: string): never => { throw Object.assign(new Error(message), { statusCode: 400 }); };
   if (body.provider !== undefined && !providers.some((provider) => provider.id === body.provider)) invalid('Unknown search provider.');
   if (body.sort !== undefined && !['relevance','distance','price_asc','price_desc','newest'].includes(body.sort)) invalid('Unknown sort order.');
@@ -603,6 +611,8 @@ function defaultRequest(body: Partial<HouseSearchRequest>): HouseSearchRequest {
     page: Number.isFinite(body.page) ? Math.max(1, Math.floor(body.page!)) : 1,
     pageSize: Number.isFinite(body.pageSize) ? Math.max(1, Math.min(50, Math.floor(body.pageSize!))) : 12,
     includeFacets: body.includeFacets ?? true,
+    includeMap: body.includeMap ?? true,
+    mapOnly: body.mapOnly ?? false,
     savedSearchIds: body.savedSearchIds ?? []
   };
 }

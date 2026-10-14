@@ -15,7 +15,7 @@ import { renderResultCard } from './results.js';
 let buildRequestBody = () => state.request;
 
 function hasNextResultsPage() {
-  return Boolean(state.response && state.response.hits.length < state.response.totalHits);
+  return Boolean(!state.isSearching && state.response && state.response.hits.length < state.response.totalHits);
 }
 
 function loadedResultsStatus() {

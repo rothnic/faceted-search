@@ -31,7 +31,7 @@ for (const width of [320,390]) {
     await expect(page.locator('#filter-drawer-toggle')).toBeChecked();
     await page.locator('#clear-filters').focus();
     await page.keyboard.press('Shift+Tab');
-    await expect(page.locator('#viewport')).toBeFocused();
+    await expect(page.locator('[data-facet="saved-searches"] input[type=checkbox]').last()).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(page.locator('#clear-filters')).toBeFocused();
     await page.keyboard.press('Escape');

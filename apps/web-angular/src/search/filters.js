@@ -63,21 +63,6 @@ export function renderFilters() {
       <button class="btn btn-sm btn-primary close-filter-panel" id="close-filter-panel" type="button" aria-controls="search-filters">Show results</button></div></div>
       <div class="mobile-provider-controls">${renderSearchSettings(state.request, state.providers, escapeHtml, true)}<div id="mobile-information"></div></div>
       <hr />
-      <fieldset class="fieldset facet-group" data-facet="saved-searches">
-        <legend class="fieldset-legend facet-title">
-          <strong>Saved Searches</strong>
-          ${savedIds.size && state.response ? `<span class="stats">${state.response.totalHits} matches</span>` : ''}
-        </legend>
-        ${state.savedSearches.map((search) => `
-          <label class="facet-option">
-            <input class="checkbox checkbox-sm" type="checkbox" id="saved-filter-${escapeHtml(search.id)}" data-saved-search="${escapeHtml(search.id)}" ${savedIds.has(search.id) ? 'checked' : ''} />
-            <span title="${escapeHtml(search.name)}">${escapeHtml(search.name)}</span>
-            <span class="count" title="${escapeHtml(search.evaluationError || 'Current match count')}">${savedSearchCountLabel(search)}</span>
-          </label>
-        `).join('') || `<span class="stats">${state.savedSearchesLoading ? 'Evaluating saved searches…' : state.savedSearchesError ? 'Saved searches unavailable' : 'No saved searches yet'}</span>`}
-        ${state.savedSearchesError ? `<p class="notice error">${escapeHtml(state.savedSearchesError)}</p><button class="btn btn-sm btn-outline" id="retry-saved">Retry saved searches</button>` : ''}
-        ${savedIds.size > 1 ? '<span class="stats">Selected saved searches are ORed together.</span>' : ''}
-      </fieldset>
       ${renderFacetGroup('City', 'city')}
       ${renderFacetGroup('Neighborhood', 'neighborhood')}
       ${renderFacetGroup('School district', 'schoolDistrict')}
@@ -107,6 +92,21 @@ export function renderFilters() {
         <span>Inside map viewport</span>
         <span></span>
       </label>
+      </fieldset>
+      <fieldset class="fieldset facet-group" data-facet="saved-searches">
+        <legend class="fieldset-legend facet-title">
+          <strong>Saved Searches</strong>
+          ${savedIds.size && state.response ? `<span class="stats">${state.response.totalHits} matches</span>` : ''}
+        </legend>
+        ${state.savedSearches.map((search) => `
+          <label class="facet-option">
+            <input class="checkbox checkbox-sm" type="checkbox" id="saved-filter-${escapeHtml(search.id)}" data-saved-search="${escapeHtml(search.id)}" ${savedIds.has(search.id) ? 'checked' : ''} />
+            <span title="${escapeHtml(search.name)}">${escapeHtml(search.name)}</span>
+            <span class="count" title="${escapeHtml(search.evaluationError || 'Current match count')}">${savedSearchCountLabel(search)}</span>
+          </label>
+        `).join('') || `<span class="stats">${state.savedSearchesLoading ? 'Evaluating saved searches…' : state.savedSearchesError ? 'Saved searches unavailable' : 'No saved searches yet'}</span>`}
+        ${state.savedSearchesError ? `<p class="notice error">${escapeHtml(state.savedSearchesError)}</p><button class="btn btn-sm btn-outline" id="retry-saved">Retry saved searches</button>` : ''}
+        ${savedIds.size > 1 ? '<span class="stats">Selected saved searches are ORed together.</span>' : ''}
       </fieldset>
     </aside>
   `;

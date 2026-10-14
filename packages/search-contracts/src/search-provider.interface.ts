@@ -54,6 +54,8 @@ export type HouseSearchRequest = {
   page: number;
   pageSize: number;
   includeFacets: boolean;
+  includeMap?: boolean;
+  mapOnly?: boolean;
   savedSearchIds?: string[];
 };
 
@@ -80,6 +82,7 @@ export type HouseSearchResponse = {
   hits: HouseSearchHit[];
   mapHits: HouseSearchMapHit[];
   totalHits: number;
+  totalInventory: number;
   page: number;
   pageSize: number;
   facets: Record<string, FacetBucket[]>;

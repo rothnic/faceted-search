@@ -9,16 +9,16 @@ import {
 } from '../core.js';
 import { renderResultsToolbar } from './controls.js';
 import { activeFilters } from './active-filters.js';
-import { renderResultMap } from './map.js';
+import { renderResultMap } from './map-markup.js';
 
 function renderRefinements() {
   const parts = activeFilters(state.request).map((part) => ({ ...part, label: part.action === 'geo' ? `radius: ${part.value} miles` : part.action === 'viewport' ? 'inside map viewport' : `${part.key}: ${label(String(part.value))}` }));
   if (!parts.length) return '';
-  return `<div class="refinements">${parts.map((part) => `
+  return `<div class="refinements" aria-label="Applied filters">${parts.map((part) => `
     <button type="button" class="btn btn-ghost refinement-pill" aria-label="Remove ${escapeHtml(part.label)}" data-remove-refinement="${part.action}" ${part.key ? `data-key="${part.key}"` : ''} ${part.value !== undefined ? `data-value="${escapeHtml(part.value)}"` : ''}>
       <span class="badge badge-soft badge-primary"><span>${escapeHtml(part.label)}</span><span aria-hidden="true">×</span></span>
     </button>
-  `).join('')}</div>`;
+  `).join('')}<button type="button" class="btn btn-sm btn-ghost clear-all-filters" id="clear-all-filters">Clear all</button></div>`;
 }
 
 export function renderResultCard(hit) {
@@ -36,14 +36,15 @@ export function renderResultCard(hit) {
 
 export function renderResults() {
   const response = state.response;
-  const toolbar = renderResultsToolbar({ request: state.request, response, view: state.mobileResultsView, facetCount: activeFilters(state.request).length, chips: renderRefinements() });
+  const toolbar = renderResultsToolbar({ request: state.request, response, view: state.mobileResultsView, desktopView: state.desktopResultsView, facetCount: activeFilters(state.request).length, chips: renderRefinements() });
   if (state.searchError) return `<section class="results-panel">${toolbar}<section class="panel"><h2>Search unavailable</h2><p class="notice error" role="alert">${escapeHtml(state.searchError)}</p><p>Your criteria are preserved. You can retry or try keyword search.</p><div class="action-row"><button class="btn btn-sm btn-outline" id="retry-search">Retry search</button><button class="btn btn-sm btn-outline" id="keyword-recovery">Use keyword search</button></div></section></section>`;
-  if (!response) return `<section class="results-panel">${toolbar}<section class="panel" aria-busy="true"><h2>Results</h2><p role="status">Searching… Semantic searches may need to download and initialize the local CPU model on first use.</p><div class="loading-skeleton" aria-hidden="true"></div><div class="loading-skeleton" aria-hidden="true"></div></section></section>`;
+  if (!response) return `<section class="results-panel">${toolbar}<div class="results-workspace" id="results-workspace" data-mobile-view="list" data-desktop-view="${state.desktopResultsView}"><div class="listing-column"><div class="result-list-scroll loading-list" aria-busy="true"><div class="loading-skeleton" aria-hidden="true"></div><div class="loading-skeleton" aria-hidden="true"></div></div></div><div class="map-column"><section class="result-map" aria-label="Map of visible results"><div class="leaflet-result-map map-placeholder" role="status">Map appears with matching listings</div><p class="map-feedback">Map loads with matching listings</p></section></div></div><p class="visually-hidden" role="status">Searching… Semantic searches may need to download and initialize the local CPU model on first use.</p></section>`;
   return `
-    <section class="results-panel">
+    <section class="results-panel${state.isSearching ? ' is-updating' : ''}" ${state.isSearching ? 'aria-busy="true"' : ''}>
       ${toolbar}
+      ${state.isSearching ? '<p class="results-updating" role="status">Updating results…</p>' : ''}
       ${(response.debug?.warnings || []).map((warning) => `<p class="notice execution-warning">${escapeHtml(warning)}</p>`).join('')}
-      <div class="results-workspace" id="results-workspace" data-mobile-view="${response.mapHits?.length ? state.mobileResultsView : 'list'}"><div class="listing-column">
+      <div class="results-workspace" id="results-workspace" data-mobile-view="${state.mobileResultsView}" data-desktop-view="${state.desktopResultsView}"><div class="listing-column">
       ${response.hits.length ? `
         <div id="result-list-scroll" class="result-list-scroll" data-loaded-count="${response.hits.length}" data-total-count="${response.totalHits}">
           <div id="result-list-spacer" class="result-list-spacer"></div>

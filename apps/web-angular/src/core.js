@@ -16,6 +16,7 @@ const state = {
   expandedFacets: {},
   response: null,
   resultMap: null,
+  selectedMapHouseId: null,
   resultVirtualizer: null,
   resultVirtualCleanup: null,
   isLoadingMore: false,
@@ -36,6 +37,8 @@ const state = {
   operation: null,
   operationError: null,
   mobileResultsView: 'list',
+  desktopResultsView: 'split',
+  desktopViewAuto: false,
   mobileListScrollTop: 0,
   searchRequestId: 0
 };

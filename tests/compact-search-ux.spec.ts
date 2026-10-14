@@ -6,6 +6,7 @@ for (const viewport of [{width:1366,height:900},{width:761,height:900},{width:39
     await page.goto('/search?mode=keyword&q=garage');
     await expect(page.locator('.result').first()).toBeVisible();
     await expect(page.locator('.results-panel > .results-head .result-tools #save-search')).toBeVisible();
+    await expect(page.locator('.total-inventory')).toBeVisible();
     await expect(page.locator('.results-panel > .results-workspace')).toBeVisible();
     await expect(page.getByRole('textbox',{name:'Search',exact:true})).toHaveAttribute('placeholder','Search homes, neighborhoods, or features…');
     expect(await page.locator('label[for="search-box"]').evaluate(e=>e.getBoundingClientRect().height)).toBe(1);

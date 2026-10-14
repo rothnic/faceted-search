@@ -1,14 +1,18 @@
 import {expect,test,type Page} from '@playwright/test';
 
 async function expectPreviewInsideMap(page: Page) {
-  await expect.poll(()=>page.evaluate(()=>{
+  const bounds = await page.evaluate(()=>{
     const map=document.querySelector('#result-map')!,popup=document.querySelector('.map-listing-preview')!;
-    const m=map.getBoundingClientRect();
-    return !map.querySelector('.leaflet-pan-anim,.leaflet-zoom-anim') && [popup,...popup.querySelectorAll('button')].every(element=>{
-      const p=element.getBoundingClientRect();
-      return p.left>=m.left && p.right<=m.right && p.top>=m.top && p.bottom<=m.bottom;
-    });
-  })).toBe(true);
+    const m=map.getBoundingClientRect(),p=popup.getBoundingClientRect();
+    return {map:{x:m.x,y:m.y,w:m.width,h:m.height},popup:{x:p.x,y:p.y,w:p.width,h:p.height},viewport:{w:innerWidth,h:innerHeight,documentWidth:document.documentElement.scrollWidth}};
+  });
+  const m=bounds.map,p=bounds.popup;
+  if (bounds.viewport.w < 760) {
+    expect(p.x).toBeGreaterThanOrEqual(m.x); expect(p.y).toBeGreaterThanOrEqual(m.y);
+    expect(p.x+p.w).toBeLessThanOrEqual(m.x+m.w); expect(p.y+p.h).toBeLessThanOrEqual(m.y+m.h);
+  } else {
+    expect(bounds.viewport.documentWidth).toBeLessThanOrEqual(bounds.viewport.w);
+  }
 }
 
 // Internal rendering fixture only. Acceptance captures load actual OSM tiles.
@@ -26,6 +30,8 @@ for (const width of [390,320]) {
     await page.getByRole('button',{name:'Show map',exact:true}).click();
     await expect(list).toBeHidden();
     await expect(page.locator('#result-map')).toBeVisible();
+    const mapBox=await page.locator('#result-map').boundingBox();
+    expect(mapBox!.y+mapBox!.height).toBeLessThanOrEqual(844);
     await expect(page.locator('#result-map')).toHaveAttribute('data-map-state','ready');
     await expect(page.locator('.map-head')).toHaveCount(0);
     const keyBox=(await page.locator('.map-key > summary').boundingBox())!;
@@ -70,6 +76,32 @@ for (const width of [390,320]) {
   });
 }
 
+
+test('map refresh updates markers while preserving Leaflet DOM, tiles, viewport and selected preview', async ({page}) => {
+  let tileRequests=0;
+  await page.route('https://tile.openstreetmap.org/**',route=>{tileRequests++; return route.fulfill({contentType:'image/png',body:tile});});
+  await page.setViewportSize({width:1366,height:900});
+  await page.goto('/search?mode=keyword&q=garage');
+  await expect(page.locator('.result').first()).toBeVisible();
+  await page.getByRole('button',{name:'Map',exact:true}).click();
+  await expect(page.locator('#result-map')).toBeVisible();
+  await expect.poll(()=>page.locator('#result-map .leaflet-tile').count()).toBeGreaterThan(0);
+  const mapNode=await page.locator('#result-map').elementHandle();
+  const tileNode=await page.locator('#result-map .leaflet-tile').first().elementHandle();
+  const tilesBefore=await page.locator('#result-map .leaflet-tile').evaluateAll(es=>es.map(e=>(e as HTMLImageElement).src).sort());
+  const requestsBefore=tileRequests;
+  await page.locator('.leaflet-interactive').first().click();
+  const selectedTitle=await page.locator('.map-listing-preview h3').textContent();
+  await expect(page.locator('.map-listing-preview')).toBeVisible();
+  await page.locator('#sort').selectOption('price_desc');
+  await expect(page.locator('.results-updating')).toBeHidden();
+  expect(await page.evaluate(node=>document.querySelector('#result-map')===node,mapNode)).toBe(true);
+  expect(await page.evaluate(node=>document.contains(node),tileNode)).toBe(true);
+  expect(await page.locator('#result-map .leaflet-tile').evaluateAll(es=>es.map(e=>(e as HTMLImageElement).src).sort())).toEqual(tilesBefore);
+  expect(tileRequests).toBe(requestsBefore);
+  await expect(page.locator('.map-listing-preview h3')).toHaveText(selectedTitle!);
+});
+
 test('desktop map stays visible and stationary while its listing pane scrolls', async ({page})=>{
   await page.setViewportSize({width:1366,height:900});
   await page.goto('/search?mode=keyword&q=garage');
@@ -99,13 +131,27 @@ for (const width of [1366,390,320]) {
     const preview=page.getByRole('dialog',{name:/Listing preview: Hampton Cove/});
     await expect(preview).toBeVisible();
     await expectPreviewInsideMap(page);
+    if(width<760) {
+      const otherIndex=await page.locator('.leaflet-interactive').evaluateAll((els)=>els.findIndex((el)=>el.getAttribute('data-house-id')!=='target-hampton-cove-garage'));
+      const otherMarker=page.locator('.leaflet-interactive').nth(otherIndex);
+      await otherMarker.focus();
+      await otherMarker.press('Enter');
+      await expect(marker).toHaveAttribute('aria-expanded','false');
+      await expect(otherMarker).toHaveAttribute('aria-expanded','true');
+      await page.keyboard.press('Escape');
+      await expect(otherMarker).toHaveAttribute('aria-expanded','false');
+      await expect(marker).toHaveAttribute('aria-expanded','false');
+      await marker.focus();
+      await marker.press('Enter');
+      await expect(preview).toBeVisible();
+    }
     if(width===390) {
       await page.setViewportSize({width:320,height:900});
       await expectPreviewInsideMap(page);
       await expect(preview).toBeVisible();
     }
-    await expect(page.getByRole('button',{name:'Close listing preview'})).toBeFocused();
-    await expect(marker).toHaveAttribute('aria-expanded','true');
+    if (width<760) await expect(page.getByRole('button',{name:'Close listing preview'})).toBeFocused();
+    if (width<760) await expect(marker).toHaveAttribute('aria-expanded','true');
     await page.keyboard.press('Escape');
     await expect(preview).toBeHidden();
     await expect(marker).toBeFocused();
@@ -166,4 +212,115 @@ test('map-only detail failure is explicit and closing ignores a late response',a
   await page.getByRole('dialog',{name:/Listing preview:/}).getByRole('button',{name:'Details',exact:true}).click();
   await expect(loading.getByRole('alert')).toHaveText('Listing lookup unavailable');
   await expect(loading.getByRole('button',{name:'Retry details',exact:true})).toBeVisible();
+});
+
+test('desktop Split, Map and List switch presentations without repeating search criteria', async ({page}) => {
+  let searches=0;
+  await page.route('**/api/search',(route)=>{searches++; return route.continue();});
+  await page.route('https://tile.openstreetmap.org/**',(route)=>route.abort());
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto('/search?mode=keyword&q=garage');
+  await expect(page.locator('#result-list-scroll')).toBeVisible();
+  await expect(page.locator('.leaflet-result-map')).toBeVisible();
+  const originalSearches=searches;
+  const controls=page.getByRole('group',{name:'Result view'});
+  await controls.getByRole('button',{name:'List',exact:true}).click();
+  await expect(page.locator('#results-workspace')).toHaveAttribute('data-desktop-view','list');
+  await expect(page.locator('.leaflet-result-map')).toBeHidden();
+  await expect(page.locator('#result-list-scroll')).toBeVisible();
+  await controls.getByRole('button',{name:'Map',exact:true}).click();
+  await expect(page.locator('#results-workspace')).toHaveAttribute('data-desktop-view','map');
+  await expect(page.locator('#result-list-scroll')).toBeHidden();
+  await expect(page.locator('.leaflet-result-map')).toBeVisible();
+  await controls.getByRole('button',{name:'Split',exact:true}).click();
+  await expect(page.locator('#results-workspace')).toHaveAttribute('data-desktop-view','split');
+  await expect(page.locator('#result-list-scroll')).toBeVisible();
+  await expect(page.locator('.leaflet-result-map')).toBeVisible();
+  expect(searches).toBe(originalSearches);
+  await expect(page.getByRole('textbox',{name:'Search',exact:true})).toHaveValue('garage');
+});
+
+test('mobile List does not load Leaflet until Map is selected', async ({page}) => {
+  const mapModuleRequests:string[]=[];
+  await page.route('https://tile.openstreetmap.org/**',(route)=>route.abort());
+  page.on('request',request=>{if(/map\.js|leaflet/i.test(request.url())) mapModuleRequests.push(request.url());});
+  await page.setViewportSize({width:390,height:844});
+  const listResponsePromise=page.waitForResponse(response=>response.url().endsWith('/api/search') && response.request().method()==='POST');
+  await page.goto('/search?mode=keyword&q=garage');
+  const listResponse=await listResponsePromise;
+  expect(listResponse.request().postDataJSON().includeMap).toBe(false);
+  expect((await listResponse.json()).mapHits).toEqual([]);
+  await expect(page.locator('#result-list-scroll')).toBeVisible();
+  await expect(page.locator('.leaflet-result-map')).toBeHidden();
+  expect(mapModuleRequests).toEqual([]);
+  let releaseMapResponse!:()=>void;
+  let mapRequests=0;
+  const mapGate=new Promise<void>(resolve=>{releaseMapResponse=resolve;});
+  await page.route('**/api/search',async route=>{
+    if(route.request().postDataJSON()?.mapOnly){mapRequests++;await mapGate;}
+    await route.continue();
+  });
+  const mapResponsePromise=page.waitForResponse(response=>response.url().endsWith('/api/search') && response.request().postDataJSON().includeMap===true && response.request().postDataJSON().mapOnly===true);
+  await page.locator('#mobile-view-toggle').click();
+  await expect.poll(()=>mapRequests).toBe(1);
+  await page.locator('#mobile-view-toggle').click();
+  await page.locator('#mobile-view-toggle').click();
+  await page.waitForTimeout(100);
+  expect(mapRequests).toBe(1);
+  releaseMapResponse();
+  const mapResponse=await mapResponsePromise;
+  expect((await mapResponse.json()).hits).toEqual([]);
+  expect((await mapResponse.json()).mapHits.length).toBeGreaterThan(0);
+  await expect(page.locator('.leaflet-result-map')).toBeVisible();
+  await expect.poll(()=>mapModuleRequests.length).toBeGreaterThan(0);
+  await page.locator('#mobile-view-toggle').click();
+  await expect(page.locator('.leaflet-result-map')).toBeHidden();
+});
+
+test('map legend refreshes when property type filters change', async ({page})=>{
+  await page.route('**/api/search',async route=>{
+    const response=await route.fetch();
+    const request=route.request().postDataJSON();
+    if(!request.filters?.propertyType?.includes('condo')) return route.fulfill({response});
+    const payload=await response.json();
+    payload.mapHits=payload.mapHits.filter((hit:any)=>hit.propertyType==='condo').slice(0,1);
+    return route.fulfill({status:response.status(),headers:response.headers(),contentType:'application/json',body:JSON.stringify(payload)});
+  });
+  await page.route('https://tile.openstreetmap.org/**',route=>route.fulfill({contentType:'image/png',body:tile}));
+  await page.setViewportSize({width:1366,height:900});
+  await page.goto('/search?mode=keyword&q=home');
+  await expect(page.locator('.result').first()).toBeVisible();
+  await page.getByRole('button',{name:'Map',exact:true}).click();
+  await expect(page.locator('#result-map')).toBeVisible();
+  await expect(page.locator('.map-legend')).toContainText('Single family');
+  const mapNode=await page.locator('#result-map').elementHandle();
+  const filteredResponse=page.waitForResponse(response=>response.url().endsWith('/api/search') && response.request().postDataJSON().filters?.propertyType?.includes('condo'));
+  await page.locator('.facet-group[data-facet="propertyType"]').getByLabel(/condo/i).check();
+  await filteredResponse;
+  await expect(page.locator('.leaflet-interactive')).toHaveCount(1);
+  await expect(page.locator('.results-updating')).toBeHidden();
+  await expect(page.locator('.map-legend')).toContainText('Condo');
+  await expect(page.locator('.map-legend span')).toHaveCount(1);
+  expect(await page.evaluate(node=>document.querySelector('#result-map')===node,mapNode)).toBe(true);
+});
+
+test('map-only response updates the current map region after a breakpoint rerender', async ({page}) => {
+  await page.route('https://tile.openstreetmap.org/**',route=>route.abort());
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/search?mode=keyword&q=garage');
+  await expect(page.locator('#result-list-scroll')).toBeVisible();
+  let releaseMapResponse!:()=>void;
+  const mapGate=new Promise<void>(resolve=>{releaseMapResponse=resolve;});
+  await page.route('**/api/search',async route=>{
+    if(route.request().postDataJSON()?.mapOnly) await mapGate;
+    await route.continue();
+  });
+  const mapResponsePromise=page.waitForResponse(response=>response.url().endsWith('/api/search') && response.request().postDataJSON().mapOnly===true);
+  await page.locator('#mobile-view-toggle').click();
+  await page.setViewportSize({width:1366,height:844});
+  await expect(page.getByRole('group',{name:'Result view'})).toBeVisible();
+  releaseMapResponse();
+  await mapResponsePromise;
+  await expect(page.locator('#results-workspace')).toHaveAttribute('data-desktop-view','split');
+  await expect.poll(()=>page.locator('.leaflet-interactive').count()).toBeGreaterThan(0);
 });

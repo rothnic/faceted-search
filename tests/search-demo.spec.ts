@@ -97,13 +97,14 @@ test('top refinement chips can clear individual filters when their text is click
 
   await page.getByRole('button', { name: /city: Madison/i }).getByText(/city: Madison/i).click();
   await expect(page.getByRole('button', { name: /city: Madison/i })).toBeHidden();
-  await expect(page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/)).not.toBeChecked();
+  await expect(page.locator('.facet-group[data-facet="city"] input:checked')).toHaveCount(0);
 
   await expect(page.locator('.refinements')).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'Search' })).toHaveValue('home');
   const scope = page.locator('.facet-group[data-facet="saved-searches"]').getByLabel(/Garage homes chip scope/);
   await expect(scope).toBeChecked();
-  await page.locator('.facet-group[data-facet="city"]').getByLabel(/Madison/).check();
+  await page.locator('[data-range="minPrice"]').fill('250000');
+  await page.locator('[data-range="minPrice"]').press('Enter');
   await page.locator('#sort').selectOption('price_desc');
   await page.locator('#clear-filters').click();
   await expect(page.locator('.refinements')).toHaveCount(0);
@@ -113,10 +114,27 @@ test('top refinement chips can clear individual filters when their text is click
   await expect(page.locator('#sort')).toHaveValue('price_desc');
   await page.getByRole('button', { name: 'Clear query', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Search' })).toHaveValue('');
+  await expect(page.locator('#search-suggestions')).toBeHidden();
   await expect(scope).toBeChecked();
   await scope.uncheck();
   await expect(scope).not.toBeChecked();
   expect(saved.currentHitCount).toBeGreaterThan(0);
+});
+
+test('chip-strip Clear all removes manual facets while preserving query and checked OR scopes', async ({page,request}) => {
+  const saved=await (await request.post('/api/saved-searches',{data:{name:'Clear-all garage scope',criteria:{q:'garage',mode:'keyword',filters:{},sort:'relevance',page:1,pageSize:12,includeFacets:true}}})).json();
+  await page.goto('/search?mode=keyword&q=home');
+  const savedScope=page.locator('[data-facet="saved-searches"]');
+  await savedScope.getByLabel(/Clear-all garage scope/).check();
+  await page.locator('[data-facet="city"]').getByLabel(/Madison/).check();
+  await expect(page.locator('#clear-all-filters')).toBeVisible();
+  await page.locator('#clear-all-filters').click();
+  await expect(page.locator('.refinements')).toHaveCount(0);
+  await expect(page.locator('.result-total')).toBeVisible();
+  await expect(page.getByRole('textbox',{name:'Search',exact:true})).toHaveValue('home');
+  await expect(savedScope.getByLabel(/Clear-all garage scope/)).toBeChecked();
+  await expect(page.locator('[data-facet="city"] input:checked')).toHaveCount(0);
+  expect(saved.id).toBeTruthy();
 });
 
 test('result map renders and hit amenity chips apply filters', async ({ page }) => {
