@@ -72,6 +72,19 @@ The in-memory demo uses a pinned MiniLM CPU model. In the connected stack, Postg
 
 ![Provider capability comparison page](docs/screenshots/provider-comparison.png)
 
+## Next.js foundation
+
+A parallel Bun-managed App Router app is in [apps/web-next](apps/web-next/README.md). The existing Vite app and backend remain available for comparison and rollback.
+
+```sh
+cd apps/web-next
+bun install --frozen-lockfile
+SEARCH_API_ORIGIN=http://127.0.0.1:5173 bun run build
+SEARCH_API_ORIGIN=http://127.0.0.1:5173 bun run start
+```
+
+Open http://localhost:3001/search. See [migration scope and gaps](apps/web-next/MIGRATION.md) for saved-search, provider-verification, inventory and viewport limitations.
+
 ## Run the Real Comparison (Docker Compose)
 
 ```bash

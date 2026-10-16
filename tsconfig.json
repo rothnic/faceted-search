@@ -10,5 +10,14 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "playwright.config.ts"]
+  "include": [
+    "apps/**/*.ts",
+    "packages/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "playwright.config.ts"
+  ],
+  "exclude": [
+    "apps/web-next"
+  ]
 }
