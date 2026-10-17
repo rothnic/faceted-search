@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 3001",
     "test": "bun test tests/search.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "node scripts/verify-real-suite.cjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

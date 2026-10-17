@@ -1,0 +1,11 @@
+.diagnostics-dialog { width: min(540px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: white; overflow-y: auto; overscroll-behavior: contain; }
+.diagnostics-dialog::backdrop { background: #10202b80; }
+.diagnostics-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 10px 2px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: white; }
+.diagnostics-dialog h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.diagnostics-dialog .compact-close { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 25px; }
+.diagnostics-dialog .diagnostics-content { display: block; margin: 0; padding: 12px 18px 20px; border: 0; color: var(--ink); font-size: 13px; }
+.diagnostics-content p { margin: 0 0 16px; color: var(--muted); line-height: 1.5; }
+.diagnostics-content dl { margin: 0; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
+.diagnostics-content dt { color: var(--muted); }
+.diagnostics-content dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 380px) { .diagnostics-content dl { grid-template-columns: 1fr; gap: 5px; } .diagnostics-content dd { margin-bottom: 10px; } }

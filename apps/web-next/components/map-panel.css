@@ -1,0 +1,23 @@
+.map-canvas .leaflet-interactive:focus-visible { outline: 3px solid #12202e; outline-offset: 3px; stroke: #12202e; stroke-width: 4px; }
+.map-panel { position: absolute; inset: 0; }
+.map-feedback { position: absolute; z-index: 500; top: 12px; left: 12px; right: 64px; display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); box-shadow: 0 2px 8px #12202e18; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.map-feedback .map-retry { justify-self: start; }
+.embedded-map-static > .map-feedback { left: 64px; right: 12px; }
+.map-expand { display: none; position: absolute; top: 12px; left: 12px; z-index: 500; }
+.map-icon-button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; padding: 10px; border: 1px solid #cbd6d6; border-radius: 8px; color: var(--ink); background: white; box-shadow: 0 2px 8px #12202e18; cursor: pointer; }
+.map-icon-button svg { display: block; }
+.embedded-map-static { touch-action: pan-y pinch-zoom; }
+.embedded-map-static > .map-canvas { pointer-events: none; touch-action: pan-y pinch-zoom; }
+.embedded-map-static > .map-canvas .leaflet-control-zoom { display: none; }
+.expanded-map { position: fixed; inset: 0; width: 100%; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: white; color: var(--ink); overscroll-behavior: contain; }
+.expanded-map[open] { display: flex; flex-direction: column; }
+.expanded-map::backdrop { background: #10202b80; }
+.expanded-map-header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 60px; padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); border-bottom: 1px solid var(--line); }
+.expanded-map-header h2 { margin: 0; font-size: 18px; }
+.expanded-map-header .map-icon-button { display: inline-flex; }
+.expanded-map-stage { position: relative; flex: 1; min-height: 0; }
+.expanded-map[open] .map-canvas { min-height: 0; }
+.expanded-map .leaflet-control-zoom a { width: 44px; height: 44px; line-height: 44px; }
+.expanded-map-selection { position: absolute; z-index: 500; bottom: max(16px, env(safe-area-inset-bottom)); left: 12px; right: 12px; display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: white; box-shadow: 0 4px 14px #12202e20; overflow-wrap: anywhere; pointer-events: none; }
+.expanded-map-selection small { color: var(--muted); }
+@media (max-width: 900px) { .map-expand { display: inline-flex; } }
