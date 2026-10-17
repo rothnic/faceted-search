@@ -23,6 +23,44 @@ const MapPanel = dynamic(() => import('@/components/map-panel'), {
 });
 
 type ViewMode = 'split' | 'map' | 'list';
+const DetailsDialog = dynamic(() => import('@/components/details-dialog'), {
+  ssr: false,
+  loading: () => <div className="detail-loading" role="status">Opening home details…</div>
+});
+function readView(): ViewMode {
+  const value = new URLSearchParams(window.location.search).get('view');
+  return value === 'map' ? 'map' : value === 'split' && window.matchMedia('(min-width: 901px)').matches ? 'split' : 'list';
+}
+function criteriaKey(state: SearchState) {
+  const filters = Object.fromEntries(Object.entries(state.filters).filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => [key, Array.isArray(value) ? [...value].sort() : value]));
+  return JSON.stringify({ provider: state.provider, mode: state.mode, q: state.q, sort: state.sort, filters, savedSearchIds: [...state.savedSearchIds].sort() });
+}
+type FeedPosition = { windowY: number; listY: number; width: number; height: number; anchor: HTMLElement | null; focus: HTMLElement | null };
+function readFeedPosition(): FeedPosition {
+  const list = document.querySelector<HTMLElement>('.result-list');
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const activeCard = active?.closest<HTMLElement>('.result-card') ?? null;
+  const bounds = list?.getBoundingClientRect();
+  const top = Math.max(0, bounds?.top ?? 0), bottom = Math.min(window.innerHeight, bounds?.bottom ?? window.innerHeight);
+  const anchor = activeCard ?? [...document.querySelectorAll<HTMLElement>('.result-card')].find((card) => { const r = card.getBoundingClientRect(); return r.bottom > top && r.top < bottom; }) ?? null;
+  return { windowY: window.scrollY, listY: list?.scrollTop ?? 0, width: window.innerWidth, height: window.innerHeight, anchor, focus: activeCard ? active : anchor?.querySelector<HTMLElement>('.result-select') ?? null };
+}
+function restoreFeedPosition(position: FeedPosition, focus: boolean) {
+  if ((position.width !== window.innerWidth || position.height !== window.innerHeight) && position.anchor?.isConnected) {
+    position.anchor.scrollIntoView({ block: 'center', inline: 'nearest' });
+  } else {
+    document.querySelector('.result-list')?.scrollTo(0, position.listY);
+    window.scrollTo(0, position.windowY);
+  }
+  if (focus && position.focus?.isConnected) position.focus.focus({ preventScroll: true });
+}
+function writeUiUrl(view: ViewMode, home: string | null, push = true) {
+  const url = new URL(window.location.href);
+  if (view === 'list') url.searchParams.delete('view'); else url.searchParams.set('view', view);
+  if (home) url.searchParams.set('home', home); else url.searchParams.delete('home');
+  const ownsDetailEntry = Boolean(home) && (push || window.history.state?.searchlabDetail === true);
+  window.history[push ? 'pushState' : 'replaceState']({ ...window.history.state, searchlabDetail: ownsDetailEntry }, '', url);
+}
 
 const facetGroups = [
   { key: 'city', label: 'City' },
@@ -34,7 +72,7 @@ const facetGroups = [
   { key: 'listingStatus', label: 'Status' }
 ] as const;
 
-const money = (value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format;
 const title = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 
 function readUrlState(): SearchState {
@@ -70,6 +108,8 @@ function syncUrl(state: SearchState, mode: 'push' | 'replace') {
     else if (value !== undefined) params.set(key, String(value));
   }
   state.savedSearchIds.forEach((id) => params.append('savedSearchId', id));
+  const current = new URLSearchParams(window.location.search);
+  for (const key of ['view', 'home']) { const value = current.get(key); if (value) params.set(key, value); }
   const url = `${window.location.pathname}?${params.toString()}`;
   if (url !== window.location.pathname + window.location.search) {
     window.history[mode === 'push' ? 'pushState' : 'replaceState'](window.history.state, '', url);
@@ -83,7 +123,9 @@ function FilterPanel({
   onRange,
   onClear,
   open,
-  panelRef
+  panelRef,
+  onClose,
+  visible
 }: {
   filters: SearchFilters;
   facets: SearchResponse['facets'];
@@ -92,15 +134,18 @@ function FilterPanel({
   onClear: () => void;
   open: boolean;
   panelRef: React.Ref<HTMLElement>;
+  onClose: () => void;
+  visible: boolean;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [disclosed, setDisclosed] = useState<Record<string, boolean>>({ bedrooms: true, amenities: true });
   const keys = Object.keys(filters).filter((key) => {
     const value = filters[key];
     return value !== undefined && (!Array.isArray(value) || value.length > 0);
   });
   return (
     <aside ref={panelRef} className="filter-panel" data-open={open} aria-label="Refine results" aria-modal={open ? true : undefined} role={open ? 'dialog' : 'complementary'}>
-      <header className="filter-heading"><strong>Refine results</strong><button type="button" className="text-button" onClick={onClear}>Clear all</button></header>
+      <header className="filter-heading"><strong>Refine results</strong><button type="button" className="filter-close" onClick={onClose} aria-label="Close filters">Close</button><button type="button" className="text-button" onClick={onClear}>Clear all</button></header>
       <section className="range-group" aria-labelledby="price-filter-title">
         <h3 id="price-filter-title">Price range</h3>
         <div className="range-inputs">
@@ -110,10 +155,10 @@ function FilterPanel({
       </section>
       {facetGroups.map((group) => {
         const buckets = facets[group.key] ?? [];
-        if (!buckets.length) return null;
-        return <details className="facet-group" key={group.key} open={group.key === 'bedrooms' || group.key === 'amenities'}>
+        if (!visible || !buckets.length) return null;
+        return <details className="facet-group" key={group.key} open={Boolean(disclosed[group.key])} onToggle={(event) => { const next = event.currentTarget.open; setDisclosed((current) => current[group.key] === next ? current : { ...current, [group.key]: next }); }}>
           <summary>{group.label}</summary>
-          <div className="facet-options">
+          {disclosed[group.key] && <><div className="facet-options">
             {(expanded[group.key] ? buckets : buckets.slice(0, 8)).map((bucket) => {
               const value = 'numeric' in group && group.numeric ? Number(bucket.value) : bucket.value;
               const selected = (filters[group.key] ?? []) as Array<string | number>;
@@ -123,7 +168,7 @@ function FilterPanel({
               </label>;
             })}
           </div>
-          {buckets.length > 8 && <button type="button" className="text-button" onClick={() => setExpanded((current) => ({ ...current, [group.key]: !current[group.key] }))}>{expanded[group.key] ? 'Show fewer' : `Show all ${buckets.length}`}</button>}
+          {buckets.length > 8 && <button type="button" className="text-button" onClick={() => setExpanded((current) => ({ ...current, [group.key]: !current[group.key] }))}>{expanded[group.key] ? 'Show fewer' : `Show all ${buckets.length}`}</button>}</>}
         </details>;
       })}
       {keys.length > 0 && <p className="filter-summary">{activeFilterCount(filters)} active {activeFilterCount(filters) === 1 ? 'filter' : 'filters'}</p>}
@@ -142,16 +187,16 @@ function Refinements({ filters, onRemove, onClear }: { filters: SearchFilters; o
   </div>;
 }
 
-function ResultCard({ hit, selected, onSelect, onAmenity }: { hit: SearchHit; selected: boolean; onSelect: () => void; onAmenity: (value: string) => void }) {
+function ResultCard({ hit, selected, onSelect, onMap, onAmenity }: { hit: SearchHit; selected: boolean; onSelect: () => void; onMap: () => void; onAmenity: (value: string) => void }) {
   return <article className={`result-card${selected ? ' is-selected' : ''}`} data-house-id={hit.id}>
-    <button type="button" className="result-select" onClick={onSelect} aria-pressed={selected}>
+    <button type="button" className="result-select" onClick={onSelect} aria-haspopup="dialog" aria-label={`View details: ${hit.title}`}>
       <div className="result-topline"><strong>{money(hit.price)}</strong><span className="status-badge">{title(hit.listingStatus)}</span></div>
       <h3>{hit.title}</h3>
       <p className="result-location">{hit.city}{hit.neighborhood ? ` · ${hit.neighborhood}` : ''}</p>
       <div className="property-facts"><span>{hit.bedrooms} bd</span><span>{hit.bathrooms} ba</span><span>{hit.squareFeet.toLocaleString()} sqft</span>{hit.distanceMiles !== undefined && <span>{hit.distanceMiles.toFixed(1)} mi</span>}</div>
       <p className="result-description">{hit.description}</p>
     </button>
-    <footer className="result-actions"><div className="amenity-tags">{hit.amenities.slice(0, 4).map((item) => <button type="button" className="amenity-tag" key={item} onClick={() => onAmenity(item)}>{title(item)}</button>)}</div><button type="button" className="text-button details-action" onClick={onSelect}>Show on map</button></footer>
+    <footer className="result-actions"><div className="amenity-tags">{hit.amenities.slice(0, 4).map((item) => <button type="button" className="amenity-tag" key={item} onClick={() => onAmenity(item)}>{title(item)}</button>)}</div><button type="button" className="text-button details-action" onClick={onMap}>Show on map</button></footer>
   </article>;
 }
 
@@ -160,11 +205,24 @@ export default function SearchPage() {
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<ViewMode>('list');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [desktop, setDesktop] = useState(false);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [mapResponse, setMapResponse] = useState<SearchResponse | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const requestRef = useRef(request);
+  requestRef.current = request;
+  const feedScroll = useRef<FeedPosition>({ windowY: 0, listY: 0, width: 0, height: 0, anchor: null, focus: null });
+  const restoreFeedFocus = useRef(false);
+  const skipFeedRestore = useRef(false);
+  const detailIdRef = useRef(detailId);
+  detailIdRef.current = detailId;
+  const closingDetails = useRef(false);
+  const detailTrigger = useRef<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadMore, setLoadMore] = useState(false);
@@ -174,21 +232,56 @@ export default function SearchPage() {
   const mapController = useRef<ReturnType<typeof createLatestSearch<SearchResponse>> | null>(null);
   const historyMode = useRef<'push' | 'replace'>('replace');
   const appendNext = useRef(false);
+  const firstSearch = useRef(true);
   const filterCount = activeFilterCount(request.filters);
 
   if (!searchController.current) searchController.current = createLatestSearch(postSearch, 180);
   if (!mapController.current) mapController.current = createLatestSearch(postSearch, 180);
 
+  const closeDetails = useCallback(() => {
+    if (closingDetails.current) return;
+    restoreFeedFocus.current = true;
+    if (window.history.state?.searchlabDetail) { closingDetails.current = true; window.history.back(); }
+    else { writeUiUrl(view, null, false); setDetailId(null); }
+  }, [view]);
   useEffect(() => {
+    if (!detailId) return;
+    const cancelPending = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !document.querySelector('.home-details[open]')) { event.preventDefault(); closeDetails(); }
+    };
+    document.addEventListener('keydown', cancelPending);
+    return () => document.removeEventListener('keydown', cancelPending);
+  }, [detailId, closeDetails]);
+
+  useEffect(() => {
+    performance.mark('searchlab-hydrated');
     setRequest(readUrlState());
+    setView(readView());
+    if (readView() === 'list' && new URLSearchParams(window.location.search).get('view') === 'split') writeUiUrl('list', new URLSearchParams(window.location.search).get('home'), false);
+    setDetailId(new URLSearchParams(window.location.search).get('home'));
     setReady(true);
     const restore = () => {
+      closingDetails.current = false;
+      const next = readUrlState();
+      const nextHome = new URLSearchParams(window.location.search).get('home');
+      const previousDetail = detailIdRef.current;
+      const previousView = viewRef.current;
+      const sameCriteria = criteriaKey(next) === criteriaKey(requestRef.current);
+      const nextView = readView();
+      if (nextView === 'list' && new URLSearchParams(window.location.search).get('view') === 'split') writeUiUrl('list', new URLSearchParams(window.location.search).get('home'), false);
+      if (nextView !== previousView && previousView !== 'map' && !previousDetail) feedScroll.current = readFeedPosition();
+      setView(nextView);
+      setDetailId(nextHome);
+      restoreFeedFocus.current = sameCriteria && Boolean((previousDetail && !nextHome) || (previousView === 'map' && nextView !== 'map'));
+      skipFeedRestore.current = !sameCriteria;
+      // UI-only history must retain loaded pages and avoid another search.
+      if (sameCriteria) return;
       historyMode.current = 'replace';
       setLoading(true);
       appendNext.current = false;
       setLoadMore(false);
       setSelectedId(null);
-      setRequest(readUrlState());
+      setRequest(next);
     };
     window.addEventListener('popstate', restore);
     return () => window.removeEventListener('popstate', restore);
@@ -199,11 +292,12 @@ export default function SearchPage() {
     syncUrl(request, historyMode.current);
     historyMode.current = 'replace';
     const searchRequest = buildSearchRequest(request);
-    return searchController.current.schedule(searchRequest, {
+    const cancel = searchController.current.schedule(searchRequest, {
       onStart: () => { setLoading(true); setError(null); },
       onSuccess: (next) => {
         setResponse(next);
-        setHits((previous) => appendNext.current ? [...previous, ...next.hits] : next.hits);
+        const append = appendNext.current;
+        setHits((previous) => append ? [...previous, ...next.hits] : next.hits);
         appendNext.current = false;
         setLoading(false);
         setLoadMore(false);
@@ -215,7 +309,9 @@ export default function SearchPage() {
         setLoading(false);
         setLoadMore(false);
       }
-    });
+    }, firstSearch.current ? 0 : undefined);
+    firstSearch.current = false;
+    return cancel;
   }, [request, ready]);
 
   useEffect(() => {
@@ -232,15 +328,48 @@ export default function SearchPage() {
   }, [request.provider, request.mode, request.q, request.filters, request.sort, request.savedSearchIds, ready, view]);
 
   useEffect(() => {
+    const media = window.matchMedia('(min-width: 901px)');
+    const resize = () => {
+      setDesktop(media.matches);
+      if (media.matches) setFilterOpen(false);
+      else {
+        setView((current) => current === 'split' ? 'list' : current);
+        if (new URLSearchParams(window.location.search).get('view') === 'split') writeUiUrl('list', new URLSearchParams(window.location.search).get('home'), false);
+      }
+    };
+    resize();
+    media.addEventListener('change', resize);
+    return () => media.removeEventListener('change', resize);
+  }, []);
+
+  useEffect(() => {
+    if (detailId) return;
+    if (view === 'map') {
+      const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>('.map-column')?.focus({ preventScroll: true }));
+      return () => cancelAnimationFrame(frame);
+    }
+    if (skipFeedRestore.current) { skipFeedRestore.current = false; return; }
+    // Run after the popstate commit and browser history's own scroll restoration.
+    const frame = requestAnimationFrame(() => {
+      restoreFeedPosition(feedScroll.current, restoreFeedFocus.current);
+      restoreFeedFocus.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [view, detailId]);
+
+  useEffect(() => {
     if (!filterOpen) return;
     const previous = document.activeElement as HTMLElement | null;
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    const background = [...document.querySelectorAll<HTMLElement>('.global-header, .search-controls, .mobile-toolbar, .results-column')];
+    const wasInert = background.map((element) => element.inert);
+    background.forEach((element) => { element.inert = true; });
     filterPanel.current?.querySelector<HTMLElement>('button, input, summary')?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { setFilterOpen(false); return; }
       if (event.key !== 'Tab' || !filterPanel.current) return;
-      const focusable = [...filterPanel.current.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), summary')].filter((element) => element.getClientRects().length > 0);
+      const focusable = [...filterPanel.current.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), summary')].filter((element) => element.getClientRects().length > 0 && (!element.closest('details:not([open])') || element.tagName === 'SUMMARY'));
       const first = focusable[0];
       const last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
@@ -249,6 +378,7 @@ export default function SearchPage() {
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.body.style.overflow = originalOverflow;
+      background.forEach((element, index) => { element.inert = wasInert[index]; });
       document.removeEventListener('keydown', onKeyDown);
       previous?.focus({ preventScroll: true });
     };
@@ -261,6 +391,10 @@ export default function SearchPage() {
     setRequest((current) => ({ ...change(current), page: 1 }));
     appendNext.current = false;
     setSelectedId(null);
+    setDetailId(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('home');
+    window.history.replaceState({ ...window.history.state, searchlabDetail: false }, '', url);
   }, []);
 
   const toggleFilter = useCallback((key: string, value: string | number, checked: boolean) => {
@@ -296,6 +430,33 @@ export default function SearchPage() {
     });
   }, [update]);
 
+  const rememberFeed = () => {
+    if (view !== 'map') feedScroll.current = readFeedPosition();
+  };
+  const changeView = (next: ViewMode) => {
+    if (next === view) return;
+    restoreFeedFocus.current = false;
+    rememberFeed();
+    writeUiUrl(next, null);
+    setDetailId(null);
+    setView(next);
+  };
+  const openDetails = (hit: SearchHit) => {
+    restoreFeedFocus.current = false;
+    detailTrigger.current = document.activeElement as HTMLElement;
+    rememberFeed();
+    setSelectedId(hit.id);
+    setDetailId(hit.id);
+    writeUiUrl(view, hit.id);
+  };
+  const showOnMap = (id: string) => {
+    if (!detailId) rememberFeed();
+    writeUiUrl('map', null, !detailId);
+    setDetailId(null);
+    setSelectedId(id);
+    setView('map');
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('.map-column')?.focus({ preventScroll: true }));
+  };
   const markers = mapResponse?.mapHits ?? [];
   const activeListHit = hits.find((hit) => hit.id === selectedId) ?? null;
   const activeHit = activeListHit ?? markers.find((hit) => hit.id === selectedId) ?? null;
@@ -325,18 +486,18 @@ export default function SearchPage() {
     <section className="mobile-toolbar" aria-label="Search controls">
       <button ref={drawerTrigger} className="toolbar-button filters-trigger" type="button" onClick={() => setFilterOpen(true)}>Filters ({filterCount})</button>
       <label className="sort-control"><span className="sr-only">Sort results</span><select value={request.sort} onChange={(event) => update((current) => ({ ...current, sort: event.target.value as SearchSort }))}><option value="relevance">Relevance</option><option value="price_asc">Price ↑</option><option value="price_desc">Price ↓</option><option value="newest">Newest</option></select></label>
-      <div className="view-tabs mobile-views" role="group" aria-label="Results view"><button type="button" aria-pressed={view === 'map'} onClick={() => setView(view === 'map' ? 'list' : 'map')}>Map</button><button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button></div>
+      <div className="view-tabs mobile-views" role="group" aria-label="Results view"><button type="button" aria-pressed={view === 'map'} onClick={() => changeView('map')}>Map</button><button type="button" aria-pressed={view === 'list'} onClick={() => changeView('list')}>List</button></div>
       <details className="mobile-settings"><summary>More</summary><div className="settings-popover"><label>Mode<select value={request.mode} onChange={(event) => update((current) => ({ ...current, mode: event.target.value as SearchMode }))}><option value="keyword">Keyword</option><option value="hybrid">Hybrid</option><option value="semantic">Semantic</option></select></label><label>Provider<select value={request.provider} onChange={(event) => update((current) => ({ ...current, provider: event.target.value as SearchProvider }))}><option value="postgres_native">PostgreSQL</option><option value="pg_search">PostgreSQL · BM25</option><option value="meilisearch">Meilisearch</option><option value="typesense">Typesense</option></select></label></div></details>
     </section>
 
     <div className="page-layout">
-      {filterOpen && <button type="button" className="drawer-backdrop" aria-label="Close filters" onClick={() => setFilterOpen(false)} />}
-      <FilterPanel panelRef={filterPanel} filters={request.filters} facets={facetData} onToggle={toggleFilter} onRange={setRange} onClear={() => { clearFilters(); setFilterOpen(false); }} open={filterOpen} />
+      {filterOpen && <button type="button" className="drawer-backdrop" tabIndex={-1} aria-label="Close filters" onClick={() => setFilterOpen(false)} />}
+      <FilterPanel panelRef={filterPanel} visible={desktop || filterOpen} onClose={() => setFilterOpen(false)} filters={request.filters} facets={facetData} onToggle={toggleFilter} onRange={setRange} onClear={() => { clearFilters(); setFilterOpen(false); }} open={filterOpen} />
       <section className="results-column" aria-label="Search results">
         <header className="results-header">
           <div className="results-heading"><h1 data-testid="results-heading">Homes</h1><span className="result-count" data-testid="results-count">{summary}</span></div>
           <div className="results-actions">
-            <div className="view-tabs desktop-views" role="group" aria-label="Results view"><button type="button" aria-pressed={view === 'split'} onClick={() => setView('split')}>Split</button><button type="button" aria-pressed={view === 'map'} onClick={() => setView('map')}>Map</button><button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button></div>
+            <div className="view-tabs desktop-views" role="group" aria-label="Results view"><button type="button" aria-pressed={view === 'split'} onClick={() => changeView('split')}>Split</button><button type="button" aria-pressed={view === 'map'} onClick={() => changeView('map')}>Map</button><button type="button" aria-pressed={view === 'list'} onClick={() => changeView('list')}>List</button></div>
             <label className="sort-control desktop-sort"><span className="sr-only">Sort results</span><select value={request.sort} onChange={(event) => update((current) => ({ ...current, sort: event.target.value as SearchSort }))}><option value="relevance">Sort: Relevance</option><option value="price_asc">Sort: Price ↑</option><option value="price_desc">Sort: Price ↓</option><option value="newest">Sort: Newest</option></select></label>
             <button type="button" data-testid="save-search" className="save-search" disabled title="Saved-search actions will be migrated in a follow-up slice">Save search</button>
           </div>
@@ -353,11 +514,11 @@ export default function SearchPage() {
         {!response && !error && <div className="result-skeletons" aria-label="Loading results" aria-busy="true"><div /><div /><div /></div>}
         {response && hits.length === 0 && !error && <div className="empty-results"><h2>No homes match this search</h2><p>Try fewer filters or a broader search.</p><button type="button" onClick={clearFilters}>Clear filters</button></div>}
         {response && hits.length > 0 && <div className={`results-workspace view-${viewLabel.toLowerCase()}`} data-view={view} aria-busy={loading}>
-          {view !== 'map' && <div className="result-list" aria-label="Homes"><div className="result-list-inner">
-            {hits.map((hit) => <ResultCard key={hit.id} hit={hit} selected={hit.id === selectedId} onSelect={() => { setSelectedId(hit.id); if (view === 'list') setView('map'); }} onAmenity={(value) => toggleFilter('amenities', value, true)} />)}
+          {<div className="result-list" aria-label="Homes"><div className="result-list-inner">
+            {hits.map((hit) => <ResultCard key={hit.id} hit={hit} selected={hit.id === selectedId} onSelect={() => openDetails(hit)} onMap={() => showOnMap(hit.id)} onAmenity={(value) => toggleFilter('amenities', value, true)} />)}
             {hits.length < response.totalHits && <button type="button" className="load-more" onClick={loadNextPage} disabled={loading || Boolean(error)}>{loadMore ? 'Loading more…' : 'Show more homes'}</button>}
           </div></div>}
-          {view !== 'list' && <section className="map-column" aria-label="Map of matching homes">
+          {view !== 'list' && <section className="map-column" tabIndex={-1} aria-label="Map of matching homes">
             {mapLoading && !mapResponse && <div className="map-loading" role="status">Loading map results…</div>}
             {mapResponse && <MapPanel hits={markers} selectedId={selectedId} onSelect={setSelectedId} />}
             {!mapLoading && !mapResponse && <div className="map-unavailable" role="status">Map data is unavailable. The list and filters are still ready.</div>}
@@ -366,7 +527,7 @@ export default function SearchPage() {
         </div>}
         {response && <p className="result-footnote">{hits.length < response.totalHits ? `Showing ${hits.length} of ${response.totalHits.toLocaleString()} matches` : `Showing all ${response.totalHits.toLocaleString()} matches`}{response.totalInventory == null ? ' · total inventory unavailable' : ` · ${response.totalInventory.toLocaleString()} homes in inventory`}</p>}
       </section>
-      <button type="button" className="drawer-close" aria-label="Close filters" onClick={() => setFilterOpen(false)}>Close filters</button>
     </div>
+    {detailId && <DetailsDialog id={detailId} hit={hits.find((hit) => hit.id === detailId) ?? null} onClose={closeDetails} onMap={() => showOnMap(detailId)} returnFocus={detailTrigger.current} />}
   </main>;
 }

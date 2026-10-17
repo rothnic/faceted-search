@@ -132,7 +132,7 @@ export function createLatestSearch<T>(
     controller = undefined;
   }
 
-  function schedule(request: SearchRequest, callbacks: SearchCallbacks<T>) {
+  function schedule(request: SearchRequest, callbacks: SearchCallbacks<T>, waitMs = delayMs) {
     cancel();
     const current = generation;
     timer = timers.setTimeout(() => {
@@ -145,7 +145,7 @@ export function createLatestSearch<T>(
       }).catch((error: unknown) => {
         if (generation === current && !active.signal.aborted) callbacks.onError(error);
       });
-    }, delayMs);
+    }, waitMs);
     return cancel;
   }
 

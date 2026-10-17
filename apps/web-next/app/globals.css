@@ -203,3 +203,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 .backend-provenance { display: grid; gap: 3px; margin: 6px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+
+
+.filter-close { display: none; }
+@media (max-width: 900px) {
+  .filter-close { display: block; min-height: 44px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--green-dark); background: white; }
+}
+
+@media (max-width: 900px) { .result-list { overflow-y: visible; overscroll-behavior: auto; } }
+@media (max-width: 520px) { .search-error { grid-template-columns: 1fr; } }
+
+html { scrollbar-gutter: stable; }
+.detail-loading { position: fixed; z-index: 1100; inset: auto 16px 16px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: white; box-shadow: 0 4px 20px #12202e30; }
