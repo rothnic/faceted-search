@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import SearchQuery, { type PlaceSuggestion } from '@/components/search-query';
 import {
   activeFilterCount,
@@ -179,14 +179,22 @@ function Refinements({ filters, onRemove, onClear, ready }: { ready: boolean; fi
   </div>;
 }
 
-function ResultCard({ hit, selected, onSelect, onMap, onAmenity, ready, returnTo }: { hit: SearchHit; selected: boolean; ready: boolean; returnTo: string; onSelect: () => void; onMap: () => void; onAmenity: (value: string) => void }) {
-  return <article className={`result-card${selected ? ' is-selected' : ''}`} data-house-id={hit.id}>
-    <a className="result-select" href={`/homes/${encodeURIComponent(hit.id)}?returnTo=${encodeURIComponent(returnTo)}`} onClick={(event) => { if (!ready || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onSelect(); }} aria-haspopup={ready ? "dialog" : undefined} aria-label={`View details: ${hit.title}`}>
+// The hit is replaced by each backend response. Readiness, selection and UI-only
+// state can update the link/controls without recomputing unchanged display fields.
+const ResultSummary = memo(function ResultSummary({ hit }: { hit: SearchHit }) {
+  return <>
       <div className="result-topline"><strong>{money(hit.price)}</strong><span className="status-badge">{title(hit.listingStatus)}</span></div>
       <h3>{hit.title}</h3>
       <p className="result-location">{hit.city}{hit.neighborhood ? ` · ${hit.neighborhood}` : ''}</p>
       <div className="property-facts"><span>{hit.bedrooms} bd</span><span>{hit.bathrooms} ba</span><span>{hit.squareFeet.toLocaleString()} sqft</span>{hit.distanceMiles !== undefined && <span>{hit.distanceMiles.toFixed(1)} mi</span>}</div>
       <p className="result-description">{hit.description}</p>
+  </>;
+});
+
+function ResultCard({ hit, selected, onSelect, onMap, onAmenity, ready, returnTo }: { hit: SearchHit; selected: boolean; ready: boolean; returnTo: string; onSelect: () => void; onMap: () => void; onAmenity: (value: string) => void }) {
+  return <article className={`result-card${selected ? ' is-selected' : ''}`} data-house-id={hit.id}>
+    <a className="result-select" href={`/homes/${encodeURIComponent(hit.id)}?returnTo=${encodeURIComponent(returnTo)}`} onClick={(event) => { if (!ready || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onSelect(); }} aria-haspopup={ready ? "dialog" : undefined} aria-label={`View details: ${hit.title}`}>
+      <ResultSummary hit={hit} />
     </a>
     <footer className="result-actions"><div className="amenity-tags">{hit.amenities.slice(0, 4).map((item) => <button type="button" className="amenity-tag" disabled={!ready} key={item} onClick={() => onAmenity(item)}>{title(item)}</button>)}</div><button type="button" className="text-button details-action" disabled={!ready} onClick={onMap}>Show on map</button></footer>
   </article>;

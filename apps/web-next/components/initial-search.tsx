@@ -11,11 +11,15 @@ async function FreshSearch({ searchParams }: { searchParams: SearchParams }) {
     else if (value !== undefined) params.set(key, value);
   }
   const request = readSearchState(params);
+  const criteriaKey = JSON.stringify(request);
   try {
     const response = await searchBackend(buildSearchRequest(request));
-    return <SearchPage key={params.toString()} initial={{ request, response, error: null }} />;
+    const dataset = response.provenance?.dataset;
+    // UI-only home/view history keeps the live feed; changed criteria or data resets it.
+    const stateKey = JSON.stringify([criteriaKey, dataset?.id, dataset?.databaseFingerprint, dataset?.revision]);
+    return <SearchPage key={stateKey} initial={{ request, response, error: null }} />;
   } catch (error) {
-    return <SearchPage key={params.toString()} initial={{ request, response: null, error: error instanceof SearchConnectionError ? error.message : 'Search is unavailable. Please retry.' }} />;
+    return <SearchPage key={`${criteriaKey}:unavailable`} initial={{ request, response: null, error: error instanceof SearchConnectionError ? error.message : 'Search is unavailable. Please retry.' }} />;
   }
 }
 

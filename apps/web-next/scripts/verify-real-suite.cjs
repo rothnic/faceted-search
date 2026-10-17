@@ -6,7 +6,7 @@ if (!process.env.SEARCHLAB_UX_ORIGIN) throw new Error('Set SEARCHLAB_UX_ORIGIN t
 const out = process.env.SEARCHLAB_UX_ARTIFACTS || `/tmp/searchlab-real-suite-${Date.now()}`;
 fs.mkdirSync(out, { mode: 0o700 });
 const results = [];
-for (const name of ['verify-ux', 'verify-focused-search', 'verify-mobile-map', 'verify-progressive-search']) {
+for (const name of ['verify-ux', 'verify-focused-search', 'verify-mobile-map', 'verify-progressive-search', 'verify-history-state-key']) {
   const artifacts = path.join(out, name);
   const result = spawnSync(process.execPath, [path.join(__dirname, name + '.cjs')], { stdio: 'inherit', env: { ...process.env, SEARCHLAB_UX_ARTIFACTS: artifacts, SEARCHLAB_FOCUSED_ARTIFACTS: artifacts, SEARCHLAB_PROGRESSIVE_ARTIFACTS: artifacts } });
   results.push({ name, exitCode: result.status, signal: result.signal, error: result.error ? String(result.error) : null });
