@@ -214,7 +214,7 @@ export async function runSearch() {
 export async function loadBootstrap() {
   const bootstrap = await api('/api/providers');
   state.providers = bootstrap.providers;
-  state.catalog = bootstrap.fixtureCatalog;
+  state.catalog = bootstrap.catalog;
   state.geoPresets = bootstrap.geoPresets;
   state.storageMode = bootstrap.storageMode;
 }

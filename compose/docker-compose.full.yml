@@ -58,6 +58,7 @@ services:
       PORT: "5173"
       HOST: 0.0.0.0
       DATABASE_URL: postgresql://demo:demo@postgres:5432/search_demo
+      DATASET_ID: searchlab-connected
       SEARCH_SYNC_PROVIDERS: meilisearch,typesense
       MEILI_HOST: http://meilisearch:7700
       MEILI_MASTER_KEY: dev_meili_master_key

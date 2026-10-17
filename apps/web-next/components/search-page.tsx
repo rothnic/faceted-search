@@ -342,6 +342,11 @@ export default function SearchPage() {
           </div>
         </header>
 
+        {response?.provenance && <section className="backend-provenance" aria-label="Backend provenance" role="status">
+          <span>{loading ? 'Updating · last completed query: ' : ''}Selected <strong>{response.provenance.selectedProvider}</strong> · Responded <strong>{response.provenance.respondingProvider}</strong> · {response.provenance.execution}</span>
+          <span>Dataset <strong>{response.provenance.dataset.id}</strong> · {response.provenance.dataset.count.toLocaleString()} source records (PostgreSQL) · DB {response.provenance.dataset.databaseFingerprint} · Revision {response.provenance.dataset.revision.slice(0, 12)}</span>
+          <span>API {response.provenance.timing.apiMs} ms · Search operation {response.provenance.timing.searchMs} ms · Gateway {response.gatewayTimingMs ?? '—'} ms · Browser fetch {response.browserFetchMs ?? '—'} ms</span>
+        </section>}
         <Refinements filters={request.filters} onRemove={removeFilter} onClear={clearFilters} />
         {error && <div className="search-error" role="alert"><strong>Search unavailable</strong><span>{error}</span><button type="button" onClick={() => setRequest((current) => ({ ...current }))}>Retry</button></div>}
         {response?.debug?.warnings?.map((warning) => <p className="backend-warning" key={warning}>{warning}</p>)}

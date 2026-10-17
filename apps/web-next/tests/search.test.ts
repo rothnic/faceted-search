@@ -72,3 +72,39 @@ describe('Searchlab search state', () => {
     search.cancel();
   });
 });
+
+// Boundary fixtures exist only in this test, never in the application runtime.
+import { validateBackendResponse } from '../lib/backend';
+import { requireRealRuntime } from '../../api/src/runtime-config';
+test('production requires explicit connected configuration and rejects removed demo mode', () => {
+  expect(() => requireRealRuntime({})).toThrow('DATABASE_URL');
+  expect(() => requireRealRuntime({ DEMO_MEMORY: '1' })).toThrow('DEMO_MEMORY was removed');
+  expect(() => requireRealRuntime({ DATABASE_URL: 'postgresql://localhost/any' })).toThrow('DATASET_ID');
+});
+test('gateway rejects missing, wrong provider, wrong dataset and wrong execution provenance', () => {
+  const body = {
+    provider: 'postgres_native', hits: [], mapHits: [], totalHits: 0,
+    provenance: { selectedProvider: 'postgres_native', respondingProvider: 'postgres_native',
+      storage: 'postgres', execution: 'postgres-fts',
+      dataset: { id: 'test-db', databaseFingerprint: 'a'.repeat(24), revision: 'b'.repeat(32), count: 126,
+        countSource: 'postgres-active-houses', observedAt: new Date().toISOString() },
+      observedAt: new Date().toISOString(), timing: { apiMs: 3, searchMs: 2, source: 'api-monotonic-clock' } }
+  };
+  const validate = (value: unknown, provider = 'postgres_native', dataset = 'test-db', mode = 'keyword') =>
+    validateBackendResponse(value, provider, dataset, undefined, mode, 'garage');
+  expect(validate(body)).toBe(true);
+  expect(validate({ ...body, provenance: undefined })).toBe(false);
+  expect(validate(body, 'meilisearch')).toBe(false);
+  expect(validate(body, 'postgres_native', 'other')).toBe(false);
+  expect(validate(body, 'postgres_native', 'test-db', 'semantic')).toBe(false);
+  expect(validate({ ...body, provenance: { ...body.provenance, respondingProvider: 'typesense' } })).toBe(false);
+});
+
+import { publicDiagnostics } from '../../api/src/public-diagnostics';
+test('public diagnostics retain operational counts and redact nested upstream failures', () => {
+  const raw = { queue: { failed: 2 }, lastError: 'synthetic-secret-marker', providers: { meili: { lastSyncError: 'synthetic-secret-marker' } },
+    recentFailures: [{ error: 'synthetic-secret-marker', attempts: 3 }], outbox: [{ error: null }] };
+  const visible = publicDiagnostics(raw);
+  expect(JSON.stringify(visible)).not.toContain('synthetic-secret-marker');
+  expect(visible).toMatchObject({ queue: { failed: 2 }, recentFailures: [{ attempts: 3 }], outbox: [{ error: null }] });
+});

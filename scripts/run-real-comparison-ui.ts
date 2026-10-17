@@ -1,3 +1,5 @@
+import { verifyRuntimeAuthenticity } from './verify-runtime-authenticity.js';
+import { seedRealTestDatabase } from '../tests/support/seed-real.js';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
@@ -21,7 +23,7 @@ async function command(args: string[]) {
 try {
   await mkdir('test-results/native',{recursive:true});
   child=spawn(process.execPath,['--import','tsx','apps/api/src/main.ts'],{
-    env:{...process.env,DATABASE_URL:database,SEARCH_SYNC_PROVIDERS:process.env.TEST_NATIVE_PROVIDERS??'meilisearch,typesense',HOST:'127.0.0.1',PORT:'0'},
+    env:{...process.env,DATABASE_URL:database,DATASET_ID:'ci-native',SEARCH_SYNC_PROVIDERS:process.env.TEST_NATIVE_PROVIDERS??'meilisearch,typesense',HOST:'127.0.0.1',PORT:'0'},
     stdio:['ignore','pipe','pipe','ipc']
   });
   child.stdout?.on('data',(data)=>{logs+=data.toString();});
@@ -38,7 +40,7 @@ try {
   // process and uses the validated disposable database. Never seed a discovered
   // fixed-port responder or trust an unrelated DEMO_URL environment value.
   assert.equal((await call('/api/providers')).storageMode,'postgres');
-  await call('/api/seed','POST');
+  await seedRealTestDatabase(database!);
   const until=Date.now()+300_000; let ready=false;
   while(Date.now()<until){
     const state=await call('/api/embedding-jobs');
@@ -48,6 +50,7 @@ try {
   }
   assert(ready,'Real native indexes did not become ready within five minutes.');
   await command(['node_modules/@playwright/test/cli.js','test','--config','playwright.real.config.ts']);
+  await verifyRuntimeAuthenticity(base, database!);
   if(process.env.REAL_UI_CAPTURE!=='0') await command(['--import','tsx','scripts/capture-screenshots.ts']);
 } finally {
   if(child&&child.exitCode===null){const stopped=once(child,'exit');child.kill('SIGTERM');const timer=setTimeout(()=>child?.kill('SIGKILL'),15_000);await stopped;clearTimeout(timer);}

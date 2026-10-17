@@ -5,6 +5,12 @@ import { EMBEDDING_QUEUE_SQL } from './embedding-queue.sql.js';
  */
 export const DATABASE_SCHEMA_SQL = `
       CREATE EXTENSION IF NOT EXISTS vector;
+      -- Persisted per database, never derived from a possibly shared local address.
+      CREATE TABLE IF NOT EXISTS searchlab_dataset_identity (
+        singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
+        instance_id uuid NOT NULL DEFAULT gen_random_uuid()
+      );
+      INSERT INTO searchlab_dataset_identity(singleton) VALUES (true) ON CONFLICT DO NOTHING;
       CREATE TABLE IF NOT EXISTS cities (
         id text PRIMARY KEY,
         name text NOT NULL,
@@ -202,7 +208,7 @@ export const DATABASE_SCHEMA_SQL = `
       ${POSTGRES_SEARCH_SCHEMA_SQL}
     `;
 
-export function describeSchema(storageMode: 'memory' | 'postgres') {
+export function describeSchema(storageMode: 'postgres') {
   const tables = [...DATABASE_SCHEMA_SQL.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)\s*\(([\s\S]*?)\n\s*\);/g)].map((match) => {
     const definitions = match[2].trim().split(/,\n\s*/);
     const constraints = definitions.filter((line) => /^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)\b/.test(line));
@@ -224,9 +230,7 @@ export function describeSchema(storageMode: 'memory' | 'postgres') {
     storageMode,
     observedAt: new Date().toISOString(),
     liveIntrospection: false,
-    note: storageMode === 'memory'
-      ? 'Demo data is held in memory. These tables describe the optional PostgreSQL implementation, not a connected database.'
-      : 'Declared application schema used by schema initialization. Live database drift, installed extensions and index health have not been inspected.',
+    note: 'Declared application schema used by schema initialization. Live database drift, installed extensions and index health have not been inspected.',
     tables
   };
 }

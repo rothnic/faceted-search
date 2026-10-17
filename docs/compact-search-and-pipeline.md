@@ -48,7 +48,7 @@ and execution details are saved in `native-execution-evidence.json`.
 
 Real-stack browser tests and final screenshot inspection are required separately
 from the 40-case internal mechanics/queue-contract regression suite. The latter
-uses explicit `demo:memory` startup and excludes `@real-services`.
+now uses the isolated `NODE_ENV=test` fixture entry under `tests/support` on port 5189 and excludes `@real-services`. This is a mechanics suite, never an app runtime mode.
 
 ## Secondary-information refinement (9dcedfd)
 

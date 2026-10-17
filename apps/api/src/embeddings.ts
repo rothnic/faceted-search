@@ -164,7 +164,7 @@ export async function embedTexts(texts: string[]): Promise<Float32Array[]> {
     vectors.set(key, entry);
     return entry.promise;
   });
-  // ponytail: bounded in-memory LRU and exact scan suit this small POC; use a vector index for a large corpus.
+  // Bound the model-vector cache; connected search and ranking run in the selected database/engine.
   while (vectors.size > MAX_CACHED_TEXTS) vectors.delete(vectors.keys().next().value!);
   return Promise.all(pending);
 }

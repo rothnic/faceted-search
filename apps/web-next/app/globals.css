@@ -201,3 +201,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+.backend-provenance { display: grid; gap: 3px; margin: 6px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }

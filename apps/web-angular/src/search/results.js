@@ -52,6 +52,7 @@ export function renderResults() {
         <div class="result-tools">${response.mapHits?.length ? `<button class="btn btn-sm btn-ghost mobile-view-toggle" id="mobile-view-toggle" aria-controls="results-workspace" aria-pressed="${state.mobileResultsView === 'map'}" aria-label="${state.mobileResultsView === 'map' ? 'Show list' : 'Show map'}">${state.mobileResultsView === 'map' ? 'List' : 'Map'}</button>` : ''}<button type="button" class="btn btn-sm btn-primary primary" id="save-search">Save search</button>
         </div>
       </div>
+      ${response.provenance ? '<p class="notice" data-backend-provenance>Selected: ' + escapeHtml(response.provenance.selectedProvider) + ' · Responded: ' + escapeHtml(response.provenance.respondingProvider) + ' · ' + escapeHtml(response.provenance.execution) + '<br>Dataset: ' + escapeHtml(response.provenance.dataset.id) + ' · PostgreSQL source rows: ' + response.provenance.dataset.count + ' · Database: ' + escapeHtml(response.provenance.dataset.databaseFingerprint) + ' · Revision: ' + escapeHtml(response.provenance.dataset.revision) + '<br>API: ' + response.provenance.timing.apiMs + ' ms · search operation: ' + response.provenance.timing.searchMs + ' ms</p>' : '<span class="stats">Backend unverified</span>'}
       ${(response.debug?.warnings || []).map((warning) => `<p class="notice execution-warning">${escapeHtml(warning)}</p>`).join('')}
       <div class="results-workspace" id="results-workspace" data-mobile-view="${response.mapHits?.length ? state.mobileResultsView : 'list'}"><div class="listing-column">
       ${response.hits.length ? `
@@ -68,10 +69,10 @@ export function renderDebug(requestBody) {
   const currentProvider = provider();
   return `
     <details class="panel debug" id="search-diagnostics"><summary id="diagnostics-toggle"><span>Search diagnostics</span><span>Requests, execution & sync</span></summary><div class="diagnostics-content"><h2>Provider Debug</h2>
-      <p class="stats">${state.storageMode === 'memory' ? 'In-memory demo. Provider names describe strategies, not connected databases.' : currentProvider?.capabilities?.requiresExternalSync ? 'External index strategy with recorded outbox sync.' : 'Application search over PostgreSQL-backed data.'}</p>
+      <p class="stats">${currentProvider?.capabilities?.requiresExternalSync ? 'External index strategy with recorded outbox sync.' : 'Application search over PostgreSQL-backed data.'}</p>
       <pre>${escapeHtml(JSON.stringify({ request: requestBody(), debug: state.response?.debug }, null, 2))}</pre>
       <h3>Recorded Sync Status</h3>
-      <p class="stats">${state.storageMode === 'memory' ? 'Simulated counters; no real index writes.' : 'Recorded counters; current engine health is not probed.'} <a id="debug-system-link" href="/system">Inspect system</a></p>
+      <p class="stats">Recorded counters; current engine health is not probed. <a id="debug-system-link" href="/system">Inspect system</a></p>
       ${state.operation ? `<p role="status" class="notice">${escapeHtml(state.operation)} request running…</p>` : ''}
       ${state.operationError ? `<p role="alert" class="notice error">${escapeHtml(state.operationError)}</p>` : ''}
       ${state.syncError ? `<p class="notice error">Sync status unavailable: ${escapeHtml(state.syncError)}</p>` : ''}

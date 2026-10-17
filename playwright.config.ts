@@ -5,12 +5,12 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   webServer: {
-    command: 'npm run demo:memory',
-    url: 'http://127.0.0.1:5173/search',
-    reuseExistingServer: !process.env.CI
+    command: 'npm run web:build && PORT=5189 npm run test:fixture-server',
+    url: 'http://127.0.0.1:5189/search',
+    reuseExistingServer: false
   },
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://127.0.0.1:5189',
     trace: 'on-first-retry'
   },
   projects: [

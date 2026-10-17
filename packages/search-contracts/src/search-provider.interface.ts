@@ -54,6 +54,8 @@ export type HouseSearchRequest = {
   page: number;
   pageSize: number;
   includeFacets: boolean;
+  includeMap?: boolean;
+  mapOnly?: boolean;
   savedSearchIds?: string[];
 };
 
@@ -74,7 +76,18 @@ export type HouseSearchHit = House & {
 
 export type HouseSearchMapHit = Pick<HouseSearchHit, 'id' | 'title' | 'lat' | 'lng' | 'price' | 'city' | 'neighborhood' | 'propertyType' | 'listingStatus'>;
 
+export type SearchProvenance = {
+  selectedProvider: SearchProviderId;
+  respondingProvider: SearchProviderId;
+  storage: 'postgres';
+  execution: string;
+  dataset: { id: string; databaseFingerprint: string; revision: string; count: number; countSource: 'postgres-active-houses'; observedAt: string };
+  timing: { apiMs: number; searchMs: number; source: 'api-monotonic-clock' };
+  observedAt: string;
+};
+
 export type HouseSearchResponse = {
+  provenance?: SearchProvenance;
   provider: SearchProviderId;
   providerLabel: string;
   hits: HouseSearchHit[];
@@ -85,7 +98,7 @@ export type HouseSearchResponse = {
   facets: Record<string, FacetBucket[]>;
   processingTimeMs: number;
   debug?: {
-    execution?: 'local-cpu' | 'local-keyword' | 'external-keyword' | 'postgres-vector' | 'postgres-fts' | 'postgres-bm25' | 'postgres-hybrid' | 'external-semantic' | 'external-hybrid';
+    execution?: 'external-keyword' | 'postgres-vector' | 'postgres-fts' | 'postgres-bm25' | 'postgres-hybrid' | 'external-semantic' | 'external-hybrid';
     embedding?: { model: string; revision: string; dimensions: number; dtype: string; device: string; minimumSimilarity: number };
     rawRequest?: unknown;
     rawResponse?: unknown;

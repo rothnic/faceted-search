@@ -1,3 +1,4 @@
+import { seedRealTestDatabase } from '../tests/support/seed-real.js';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
@@ -21,7 +22,7 @@ let logs = '';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function start(enabledProviders = providers) {
   child = spawn(process.execPath, ['--import', 'tsx', 'apps/api/src/main.ts'], {
-    env: { ...process.env, DATABASE_URL: databaseUrl!, SEARCH_SYNC_PROVIDERS: enabledProviders.join(','), EMBEDDING_WORKER_ENABLED: '1', PORT: '0', HOST: '127.0.0.1' },
+    env: { ...process.env, DATABASE_URL: databaseUrl!, DATASET_ID: 'ci-native', SEARCH_SYNC_PROVIDERS: enabledProviders.join(','), EMBEDDING_WORKER_ENABLED: '1', PORT: '0', HOST: '127.0.0.1' },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc']
   });
   child.stdout?.on('data', (data) => { logs += data.toString(); });
@@ -91,7 +92,7 @@ const search = (provider: string, extra: object = {}) => call('/api/search', { p
 try {
   await start([]);
   const started = performance.now();
-  await call('/api/seed', {});
+  await seedRealTestDatabase(databaseUrl!);
   await idle();
   // Enabling native providers after a completed PG-only load must automatically
   // synchronize existing data rather than mistake PG completion for native readiness.

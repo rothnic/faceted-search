@@ -9,7 +9,7 @@
 ## Accepted foundation scope
 
 - Run a parallel Next.js App Router route from `apps/web-next` using the latest stable version identified by the official docs at migration start: Next.js `16.4.2`; dependencies are managed by Bun with the generated lockfile.
-- Keep the Vite app and API source untouched; the Next server runs on `3001` and rewrites `/api/*` to the existing API origin.
+- Preserve the Vite UI for comparison. The authenticity follow-up removes production simulation paths from the shared API; Next runs on `3001` with an explicit runtime search gateway.
 - Provide one responsive Search page state model for query, provider, mode, sort, filters, view and selection. Desktop uses a filter rail and Split/Map/List; mobile uses the same filter component in a drawer and a Map/List switch.
 - Send search criteria to the existing backend. The browser debounces list and map search by 180 ms, aborts replaced requests, and ignores stale responses. Result rows use the existing paged API with 18 records per request.
 - Start in List on both desktop and mobile. Load Leaflet code and map CSS only after Map or Split is selected. Map data uses a distinct map-only request after the map becomes visible.
@@ -36,3 +36,11 @@ Criteria are URL-backed: discrete facet/settings actions create history entries;
 Live integration found the retained API ignores includeMap/mapOnly and omits totalInventory. The Next POST /api/search adapter forwards all search criteria and preserves upstream results/counts/status, but removes unused mapHits/hits before sending responses to the browser. This does not establish backend payload or viewport acceptance.
 
 Listing selection opens the map preview. Rich listing-detail overlays, geographic origin controls and the Saved Searches/Providers/System pages are not migrated in this bounded foundation. Distance sorting is omitted until an origin is supported.
+
+## Backend authenticity follow-up
+
+Nick requested removal of every app runtime in-memory demo. The production API now requires DATABASE_URL and DATASET_ID; test fixtures have a separate NODE_ENV=test entry under tests/support. The seed HTTP route is removed. Direct legacy adapters with hardcoded local endpoints/keys are disabled.
+
+Next requires SEARCH_API_ORIGIN and SEARCH_EXPECTED_DATASET_ID at runtime and rejects absent, mismatched provider/mode/dataset provenance. The source observation contains a persisted database UUID fingerprint, content revision across source tables, active PostgreSQL row count, and observation time. These describe the source after search, not external-index freshness or an atomic search snapshot. API/search, gateway, and browser timings have distinct scopes; browser timing excludes debounce.
+
+The previously tested live API predates this provenance contract and will be rejected by the corrected gateway until an approved matching API rollout. Prior live PostgreSQL keyword observations remain historical evidence for 02ddac0 only. No rollout is authorized here. New connected-path evidence must come from owned disposable CI appliances or an explicitly approved matching backend.

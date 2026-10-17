@@ -40,7 +40,19 @@ export type SearchHit = {
   distanceMiles?: number;
 };
 
+export type SearchProvenance = {
+  selectedProvider: SearchProvider;
+  respondingProvider: SearchProvider;
+  storage: 'postgres';
+  execution: string;
+  dataset: { id: string; databaseFingerprint: string; revision: string; count: number; countSource: 'postgres-active-houses'; observedAt: string };
+  timing: { apiMs: number; searchMs: number; source: 'api-monotonic-clock' };
+  observedAt: string;
+};
 export type SearchResponse = {
+  provenance?: SearchProvenance;
+  gatewayTimingMs?: number;
+  browserFetchMs?: number;
   provider: SearchProvider;
   providerLabel: string;
   hits: SearchHit[];
@@ -141,6 +153,7 @@ export function createLatestSearch<T>(
 }
 
 export async function postSearch(request: SearchRequest, signal: AbortSignal): Promise<SearchResponse> {
+  const started = performance.now();
   const response = await fetch('/api/search', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -149,5 +162,5 @@ export async function postSearch(request: SearchRequest, signal: AbortSignal): P
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error ?? `${response.status} ${response.statusText}`);
-  return body as SearchResponse;
+  return { ...body, browserFetchMs: Number((performance.now() - started).toFixed(1)) } as SearchResponse;
 }
