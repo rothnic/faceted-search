@@ -5,5 +5,5 @@ if (provider !== 'meilisearch' && provider !== 'typesense') {
   throw new Error('Usage: npm run search:reset -- --provider meilisearch|typesense');
 }
 
-await postApi('/api/seed');
-console.log(`Reset ${provider} demo index state. Run search:backfill to rebuild it.`);
+await postApi('/api/sync/backfill', { provider });
+console.log('Queued source backfill for ' + provider + '. Check the recorded sync and embedding job status.');

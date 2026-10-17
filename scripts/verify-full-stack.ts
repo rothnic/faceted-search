@@ -58,7 +58,7 @@ async function waitForAutomaticWork() {
 }
 
 assert((await getApi('/api/providers')).storageMode === 'postgres', 'This verification requires the PostgreSQL full stack.');
-await postApi('/api/seed');
+// Source data must be loaded beforehand through the guarded test-only seed helper.
 await waitForAutomaticWork();
 
 const meili = await search('meilisearch');

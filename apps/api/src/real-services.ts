@@ -114,6 +114,26 @@ export class RealServices {
     return rows[0].catalog;
   }
 
+  async datasetIdentity(id: string) {
+    // A source observation after search, not a claim that an external index is current.
+    // Hash actual source tables so related-table changes are reflected as well.
+    const { rows } = await this.pool.query(`SELECT
+      (SELECT instance_id::text FROM searchlab_dataset_identity WHERE singleton) AS instance_id,
+      (SELECT count(*)::int FROM houses WHERE deleted_at IS NULL) AS count,
+      md5(concat_ws('|',
+        (SELECT COALESCE(jsonb_agg(to_jsonb(h) ORDER BY id)::text,'[]') FROM houses h),
+        (SELECT COALESCE(jsonb_agg(to_jsonb(c) ORDER BY id)::text,'[]') FROM cities c),
+        (SELECT COALESCE(jsonb_agg(to_jsonb(n) ORDER BY id)::text,'[]') FROM neighborhoods n),
+        (SELECT COALESCE(jsonb_agg(to_jsonb(a) ORDER BY house_id,amenity)::text,'[]') FROM house_amenities a),
+        (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY house_id,tag)::text,'[]') FROM house_tags t))) AS revision`);
+    const row = rows[0];
+    if (!row.instance_id) throw new Error('Database identity is unavailable');
+    return { id, databaseFingerprint: createHash('sha256')
+      .update(row.instance_id).digest('hex').slice(0,24),
+      revision: row.revision as string, count: Number(row.count),
+      countSource: 'postgres-active-houses' as const, observedAt: new Date().toISOString() };
+  }
+
   async start() {
     await this.ensureSchema();
     await this.embeddingJobs.start();
@@ -423,7 +443,7 @@ export class RealServices {
   async search(request: HouseSearchRequest, scopeIds?: readonly string[]) {
     if (request.provider === 'postgres_native' || request.provider === 'pg_search') {
       const result = await this.postgresSearch.search(request, scopeIds);
-      return { ...result, debug: { ...result.debug, execution: request.mode === 'keyword' || !request.q?.trim() ? request.provider === 'pg_search' ? 'postgres-bm25' as const : 'postgres-fts' as const : request.mode === 'semantic' ? 'postgres-vector' as const : 'postgres-hybrid' as const } };
+      return { ...result, respondingProvider: request.provider, debug: { ...result.debug, execution: request.mode === 'keyword' || !request.q?.trim() ? request.provider === 'pg_search' ? 'postgres-bm25' as const : 'postgres-fts' as const : request.mode === 'semantic' ? 'postgres-vector' as const : 'postgres-hybrid' as const } };
     }
     const provider = request.provider;
     if (!this.config.syncProviders?.includes(provider)) throw new EmbeddingUnavailableError(`${provider} indexing is disabled. Enable SEARCH_SYNC_PROVIDERS and wait for automatic backfill.`);
@@ -452,7 +472,7 @@ export class RealServices {
       const after = await snapshot();
       if (after.pending || after.version !== before.version) throw new Error('Source data changed during native search; retry after indexing settles.');
       if (all.length !== pageResult.totalHits || new Set(all.map((hit) => hit.id)).size !== all.length) throw new Error('Native index/source result set is incomplete; run a source backfill.');
-      return { hits: pageResult.hits, mapHits: all, totalHits: pageResult.totalHits, facets: request.includeFacets ? pageResult.facets : {}, debug: {
+      return { respondingProvider: provider, hits: pageResult.hits, mapHits: all, totalHits: pageResult.totalHits, facets: request.includeFacets ? pageResult.facets : {}, debug: {
         execution: request.mode === 'keyword' || !request.q?.trim() ? 'external-keyword' as const : request.mode === 'semantic' ? 'external-semantic' as const : 'external-hybrid' as const,
         rawRequest: requests, rawResponse: responses,
         notes: ['Filtering, ranking, facet counts and total counts come from the selected engine. Map and saved-scope IDs use its complete bounded result set. Native scores are engine-specific.']
@@ -519,7 +539,7 @@ export class RealServices {
     hits.forEach((hit, index) => { hit.score = Number(rawResponse.hits[index]?._rankingScore ?? 0); });
     return {
       hits,
-      totalHits: rawResponse.estimatedTotalHits ?? rawResponse.totalHits ?? hits.length,
+      totalHits: this.engineCount(rawResponse.estimatedTotalHits ?? rawResponse.totalHits),
       facets: this.meiliFacetDistribution(rawResponse.facetDistribution ?? {}),
       debug: {
         rawRequest,
@@ -556,7 +576,7 @@ export class RealServices {
     hits.forEach((hit, index) => { const native = rawResponse.hits[index]; hit.score = Number(native?.text_match_info?.score ?? native?.text_match ?? (native?.vector_distance !== undefined ? 1-native.vector_distance : 0)); if (native?.vector_distance !== undefined) hit.semanticScore = 1-native.vector_distance; });
     return {
       hits,
-      totalHits: rawResponse.found ?? hits.length,
+      totalHits: this.engineCount(rawResponse.found),
       facets: this.typesenseFacetCounts(rawResponse.facet_counts ?? []),
       debug: {
         rawRequest,
@@ -564,6 +584,11 @@ export class RealServices {
         warnings: []
       }
     };
+  }
+
+  private engineCount(value: unknown): number {
+    if (!Number.isInteger(value) || Number(value) < 0) throw new Error('Selected engine did not return a valid total count.');
+    return Number(value);
   }
 
   private meiliFilters(request: HouseSearchRequest, scopeIds?: readonly string[]): string[] {
@@ -710,12 +735,22 @@ export class RealServices {
 }
 
 export function realServiceConfigFromEnv(): RealServiceConfig {
+  const syncProviders = (process.env.SEARCH_SYNC_PROVIDERS ?? '').split(',').filter(Boolean);
+  for (const provider of syncProviders) {
+    if (provider !== 'meilisearch' && provider !== 'typesense') throw new Error('SEARCH_SYNC_PROVIDERS must be a comma-separated list of meilisearch,typesense.');
+    const key = provider === 'meilisearch' ? 'MEILI_HOST' : 'TYPESENSE_HOST';
+    const value = process.env[key];
+    if (!value) throw new Error(key + ' must explicitly identify the selected appliance.');
+    let url: URL;
+    try { url = new URL(value); } catch { throw new Error(key + ' must be a valid HTTP(S) URL.'); }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(key + ' must be an HTTP(S) origin without credentials.');
+  }
   return {
     databaseUrl: process.env.DATABASE_URL,
-    meiliHost: process.env.MEILI_HOST ?? 'http://127.0.0.1:7700',
-    meiliKey: process.env.MEILI_MASTER_KEY ?? 'dev_meili_master_key',
-    typesenseHost: process.env.TYPESENSE_HOST ?? 'http://127.0.0.1:8108',
-    typesenseKey: process.env.TYPESENSE_API_KEY ?? 'dev_typesense_api_key',
+    meiliHost: process.env.MEILI_HOST ?? '',
+    meiliKey: process.env.MEILI_MASTER_KEY ?? '',
+    typesenseHost: process.env.TYPESENSE_HOST ?? '',
+    typesenseKey: process.env.TYPESENSE_API_KEY ?? '',
     syncProviders: (process.env.SEARCH_SYNC_PROVIDERS ?? '').split(',').filter(Boolean).map((value) => {
       if (value !== 'meilisearch' && value !== 'typesense') throw new Error('SEARCH_SYNC_PROVIDERS must be a comma-separated list of meilisearch,typesense.');
       return value;

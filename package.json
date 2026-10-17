@@ -10,7 +10,6 @@
     "test": "playwright test",
     "typecheck": "tsc --noEmit",
     "screenshots:update": "node --import tsx scripts/capture-screenshots.ts",
-    "seed": "node --import tsx scripts/seed.ts",
     "search:backfill": "node --import tsx scripts/backfill-search.ts",
     "search:sync-worker": "node --import tsx scripts/search-sync-worker.ts",
     "search:reset": "node --import tsx scripts/reset-search-indexes.ts",
@@ -23,9 +22,10 @@
     "verify:embedding-queue": "node --import tsx scripts/verify-embedding-queue.ts",
     "verify:native-embeddings": "node --import tsx scripts/verify-native-embeddings.ts",
     "verify:appliance-readiness": "node --import tsx scripts/verify-appliance-readiness.ts",
-    "demo:memory": "npm run web:build && DEMO_MEMORY=1 npm run api:dev",
     "verify:postgres-search": "node --import tsx scripts/verify-postgres-search.ts",
-    "verify:real-browser": "npm run web:build && node --import tsx scripts/run-real-comparison-ui.ts"
+    "verify:real-browser": "npm run web:build && node --import tsx scripts/run-real-comparison-ui.ts",
+    "test:fixture-server": "NODE_ENV=test node --import tsx tests/support/fixture-api.ts",
+    "seed:test": "node --import tsx tests/support/seed-real.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "3.8.1",

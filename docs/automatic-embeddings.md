@@ -84,7 +84,7 @@ PostgreSQL uses an exact cosine scan through pgvector for this small corpus, not
 ## Verification and measured costs
 
 - `npm run verify:appliance-readiness`: deterministic fetch-contract regressions for index loss, schema drift, remote embedder safety and complete native pagination
-- `npm run verify:embeddings`: actual Node inference and in-memory API, caching, offline reload and failure recovery
+- `npm run verify:embeddings`: actual Node inference and explicitly isolated test-fixture API, caching, offline reload and failure recovery
 - `TEST_DATABASE_URL=... npm run verify:embedding-queue`: real PostgreSQL/PGMQ/pgvector, deterministic inference barriers for race tests; eleven groups cover rollback, admission/coalescing, expired/crashed leases, stale writes/acks, retry cap, manual retry, deletion, outage, multiple consumers, restart and projection configuration fencing and durable ambiguous-repair intent
 - `TEST_DATABASE_URL=... TEST_DISPOSABLE_ENGINES=1 npm run verify:native-embeddings`: owned disposable API and **real model/engines**. Initial load, native query paths, field edits, update-versus-fresh equivalence, direct SQL/reference changes, restart, deletes, pagination, facets/maps/saved scopes. Only explicit disposable database names are accepted; the explicit engine opt-in confirms the configured engine instances are also disposable, because their houses index/collection is replaced
 - `TEST_DATABASE_URL=... TEST_PG_SEARCH=1 npm run verify:postgres-search`: real GIN FTS, ParadeDB BM25, pgvector, SQL filters/geo/maps/facets/counts, full fixture inference and snapshot-consistent hit metadata

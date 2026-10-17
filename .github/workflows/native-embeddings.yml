@@ -78,6 +78,12 @@ jobs:
         run: |
           mkdir -p test-results/native
           npm run verify:native-embeddings 2>&1 | tee test-results/native/native-verification.log
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - name: Build the real Next.js production acceptance target
+        working-directory: apps/web-next
+        run: bun install --frozen-lockfile && bun run test && bun run build
       - run: npx playwright install --with-deps chromium
       - name: Owned real browser acceptance and genuine-map screenshots across all four backends
         env:

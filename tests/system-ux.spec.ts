@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { describeSchema, DATABASE_SCHEMA_SQL } from '../apps/api/src/schema.js';
 
 const model = { model: 'Xenova/all-MiniLM-L6-v2', dimensions: 384, dtype: 'q8', device: 'cpu', state: 'ready', cachedTexts: 12, activeBatches: 0, computedTexts: 12 };
-const sync = { storageMode: 'memory', observedAt: '2026-10-13T18:00:00Z', outboxPendingCount: 0, providers: { meilisearch: { documentsIndexed: 0, documentsDeleted: 0, backfillStatus: 'not_started' }, typesense: { documentsIndexed: 0, documentsDeleted: 0, backfillStatus: 'not_started' } }, outbox: [] };
+const sync = { storageMode: 'postgres', observedAt: '2026-10-13T18:00:00Z', outboxPendingCount: 0, providers: { meilisearch: { documentsIndexed: 0, documentsDeleted: 0, backfillStatus: 'not_started' }, typesense: { documentsIndexed: 0, documentsDeleted: 0, backfillStatus: 'not_started' } }, outbox: [] };
 
 test.beforeEach(async ({ request }) => { await request.post('/api/seed'); });
 
@@ -12,8 +12,8 @@ test('declared schema matches the single initialization source, including relati
   const schema = await response.json();
   expect(schema.liveIntrospection).toBe(false);
   expect(schema.source).toBe('application-ddl');
-  expect(schema.tables).toEqual(describeSchema('memory').tables);
-  expect(schema.tables).toHaveLength(describeSchema('memory').tables.length);
+  expect(schema.tables).toEqual(describeSchema('postgres').tables);
+  expect(schema.tables).toHaveLength(describeSchema('postgres').tables.length);
   expect(schema.tables.some((table: {name: string}) => table.name === 'house_embeddings')).toBe(true);
   for (const table of schema.tables) expect(DATABASE_SCHEMA_SQL).toContain(table.ddl);
   const houses = schema.tables.find((table: {name: string}) => table.name === 'houses');
@@ -27,9 +27,9 @@ test('schema explorer searches fields and supports keyboard disclosure, empty st
   await page.goto('/schema');
   await expect(page.getByRole('heading', { name: 'Schema explorer' })).toBeVisible();
   await expect(page.getByText('Application DDL · not live introspection')).toBeVisible();
-  await expect(page.locator('#schema-count')).toHaveText(`${describeSchema('memory').tables.length} of ${describeSchema('memory').tables.length} declared tables`);
+  await expect(page.locator('#schema-count')).toHaveText(`${describeSchema('postgres').tables.length} of ${describeSchema('postgres').tables.length} declared tables`);
   await page.getByLabel('Find a table or field').fill('city_id');
-  await expect(page.locator('#schema-count')).toHaveText(`2 of ${describeSchema('memory').tables.length} declared tables`);
+  await expect(page.locator('#schema-count')).toHaveText(`2 of ${describeSchema('postgres').tables.length} declared tables`);
   await expect(page.getByText('→ cities.id').first()).toBeVisible();
   await page.getByLabel('Find a table or field').fill('not-a-field');
   await expect(page.getByText('No declared table or field matches. Try a shorter name.')).toBeVisible();
@@ -40,14 +40,14 @@ test('schema explorer searches fields and supports keyboard disclosure, empty st
   await page.keyboard.press('Enter'); await expect(cities).not.toHaveAttribute('open', '');
 });
 
-test('system status distinguishes simulated recorded state from model readiness and inference', async ({ page }) => {
+test('system status distinguishes recorded state from model readiness and inference', async ({ page }) => {
   await page.route('**/api/embeddings', (route) => route.fulfill({ json: { ...model, activeBatches: 2 } }));
   await page.route('**/api/sync/status', (route) => route.fulfill({ json: sync }));
   await page.goto('/system');
-  await expect(page.getByRole('heading', { name: 'In-memory demo' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'PostgreSQL storage' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Computing embeddings' })).toBeVisible();
-  await expect(page.getByText(/counters do not indicate documents in a real search engine/)).toBeVisible();
-  await expect(page.getByText(/This demo has no durable worker/)).toBeVisible();
+  await expect(page.getByText(/not a live engine health probe/)).toBeVisible();
+  await expect(page.getByText(/Durable embedding work is reported separately/)).toBeVisible();
   await expect(page.getByText(/not a backfill completion percentage/)).toBeVisible();
   await expect(page.getByRole('progressbar')).toHaveCount(0);
 });
@@ -121,12 +121,12 @@ test('sync action has a single in-flight request and an explicit recoverable fai
   await page.route('**/api/embeddings', (route) => route.fulfill({ json: model }));
   await page.route('**/api/sync/backfill', async (route) => { count++; await gate; await route.fulfill({ status: 500, json: { error: 'Index unavailable' } }); });
   await page.goto('/system');
-  await page.getByRole('button', { name: 'Simulate meilisearch backfill' }).click();
-  await expect(page.getByRole('button', { name: 'Simulate meilisearch backfill' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Run meilisearch backfill' }).click();
+  await expect(page.getByRole('button', { name: 'Run meilisearch backfill' })).toBeDisabled();
   await expect(page.getByText(/running in this browser request/)).toBeVisible();
   expect(count).toBe(1); release();
   await expect(page.getByRole('alert')).toContainText('Index unavailable');
-  await expect(page.getByRole('button', { name: 'Simulate meilisearch backfill' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Run meilisearch backfill' })).toBeEnabled();
 });
 
 test('mobile navigation and filter disclosure are usable without page overflow', async ({ page }) => {
@@ -151,12 +151,13 @@ test('mobile navigation and filter disclosure are usable without page overflow',
 });
 
 
-test('direct adapters show a recoverable engine failure rather than blank results', async ({ page }) => {
-  await page.route('http://127.0.0.1:8108/**', (route) => route.fulfill({ status: 503, json: { message: 'Test engine offline' } }));
+test('unconfigured direct adapters cannot select a hardcoded local engine', async ({ page }) => {
+  let applianceCalls = 0;
+  await page.route(/http:\/\/127\.0\.0\.1:(8108|7700)\//, (route) => { applianceCalls++; return route.abort(); });
   await page.goto('/search/instant/typesense');
-  await expect(page.getByRole('alert')).toContainText('Direct search engine unavailable');
-  await expect(page.getByRole('button', { name: 'Retry direct search' })).toBeVisible();
-  await page.getByRole('link', { name: 'Use the main search' }).click();
+  await expect(page.getByRole('heading', { name: 'Direct adapter unavailable' })).toBeVisible();
+  expect(applianceCalls).toBe(0);
+  await page.getByRole('link', { name: 'Open Search' }).click();
   await expect(page.locator('#result-list-scroll')).toBeVisible();
 });
 

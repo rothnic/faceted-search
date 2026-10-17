@@ -12,9 +12,9 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const temporary = await mkdtemp(join(tmpdir(), 'faceted-embeddings-'));
 
 async function startServer(label: string, extraEnv: Record<string, string> = {}) {
-  const child = spawn(process.execPath, ['--import', 'tsx', 'apps/api/src/main.ts'], {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'tests/support/fixture-api.ts'], {
     cwd: root,
-    env: { ...process.env, DATABASE_URL: '', DEMO_MEMORY: '1', HOST: '127.0.0.1', PORT: '0', DEMO_DATA_DIR: join(temporary, label), ...extraEnv },
+    env: { ...process.env, DATABASE_URL: '', NODE_ENV: 'test', HOST: '127.0.0.1', PORT: '0', DEMO_DATA_DIR: join(temporary, label), ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc']
   });
   let logs = '';

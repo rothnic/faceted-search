@@ -11,7 +11,7 @@ function renderSnapshot() {
     <p class="stats">Last attempted ${state.statusCheckedAt ? e(new Date(state.statusCheckedAt).toLocaleTimeString()) : 'not yet'} · refreshes while this page is visible</p>
     <div class="status-grid">
       <article class="panel"><span class="eyebrow">Data source</span><h2>${storageLabel()}</h2>
-        <p>${state.storageMode === 'memory' ? 'Fixture listings and simulated index sync. Changes reset when the server restarts or the demo is seeded.' : state.storageMode === 'postgres' ? 'The API reports PostgreSQL-backed data and persisted sync state.' : 'Could not establish the current storage mode.'}</p>
+        <p>${state.storageMode === 'postgres' ? 'The API reports PostgreSQL-backed data and persisted sync state.' : 'Could not establish the current storage mode.'}</p>
         <a id="system-schema-link" href="/schema">Browse the declared schema →</a>
       </article>
       <article class="panel"><span class="eyebrow">Application CPU runtime</span><h2>${e(embeddingLabel(model))}</h2>
@@ -23,15 +23,15 @@ function renderSnapshot() {
     </div>
     ${renderEmbeddingJobs()}
     <section class="panel status-section"><div class="section-heading"><div><span class="eyebrow">Recorded synchronization</span><h2>External indexes</h2></div><span class="status-badge">${sync ? `${e(sync.outboxPendingCount)} pending events` : 'Status unavailable'}</span></div>
-      <p>${state.storageMode === 'memory' ? 'Demo simulation: these counters do not indicate documents in a real search engine.' : 'Recorded application counters, not a live engine health probe. Completion records do not verify current index freshness.'}</p>
-      <p class="stats">${state.storageMode === 'memory' ? 'This demo has no durable worker. Sync buttons run one simulated request.' : 'Durable embedding work is reported separately above. These counters record application sync requests, not native engine embedding progress.'}</p>
+      <p>Recorded application counters, not a live engine health probe. Completion records do not verify current index freshness.</p>
+      <p class="stats">Durable embedding work is reported separately above. These counters record application sync requests, not native engine embedding progress.</p>
       ${sync ? `<div class="status-grid">${Object.entries(sync.providers || {}).map(([name, provider]) => `<article class="status-card"><h3>${e(label(name))}</h3>
         <span class="status-badge">Backfill: ${e(label(provider.backfillStatus))}</span>
         <dl class="status-facts"><dt>Recorded indexed</dt><dd>${e(provider.documentsIndexed)}</dd><dt>Recorded deleted</dt><dd>${e(provider.documentsDeleted)}</dd><dt>Last sync</dt><dd>${provider.lastSyncTime ? e(new Date(provider.lastSyncTime).toLocaleString()) : 'Never recorded'}</dd></dl>
         ${provider.lastSyncError ? `<p class="notice error">${e(provider.lastSyncError)}</p>` : '<p class="stats">No recorded sync error</p>'}
-        <button class="btn btn-sm btn-outline" id="system-backfill-${e(name)}" data-system-action="backfill" data-provider="${e(name)}" ${state.operation ? 'disabled' : ''}>${state.storageMode === 'memory' ? 'Simulate' : 'Run'} ${e(label(name))} backfill</button>
+        <button class="btn btn-sm btn-outline" id="system-backfill-${e(name)}" data-system-action="backfill" data-provider="${e(name)}" ${state.operation ? 'disabled' : ''}>Run ${e(label(name))} backfill</button>
       </article>`).join('')}</div>` : `<p class="notice error" role="alert">${e(state.syncError || 'Waiting for sync status')}</p>`}
-      <div class="action-row"><button class="btn btn-sm btn-outline" id="system-worker" data-system-action="worker" ${state.operation || !sync ? 'disabled' : ''}>${state.storageMode === 'memory' ? 'Simulate worker once' : 'Run worker once'}</button></div>
+      <div class="action-row"><button class="btn btn-sm btn-outline" id="system-worker" data-system-action="worker" ${state.operation || !sync ? 'disabled' : ''}>Run worker once</button></div>
       <details id="system-sync-raw"><summary id="system-raw-summary">Raw observed sync response</summary><pre>${e(JSON.stringify(sync, null, 2))}</pre></details>
     </section>`);
   document.querySelector('#operation-feedback').innerHTML = state.operation
@@ -55,7 +55,7 @@ export async function renderSystem() {
     state.operationError = null; state.operationResult = null; renderSnapshot();
     try {
       const result = await api(embeddingBackfill ? '/api/embedding-jobs/backfill' : backfill ? '/api/sync/backfill' : '/api/sync/worker/run', { method: 'POST', body: JSON.stringify(backfill ? { provider: button.dataset.provider } : {}) });
-      state.operationResult = embeddingBackfill ? `Backfill request accepted: ${result.accepted} document records accepted for scheduling; ${result.invalidated} document records invalidated. Scheduling is not completed indexing. Refreshing observed counts.` : `${state.operation} request completed${state.storageMode === 'memory' ? ' (demo simulation)' : ''}.`;
+      state.operationResult = embeddingBackfill ? `Backfill request accepted: ${result.accepted} document records accepted for scheduling; ${result.invalidated} document records invalidated. Scheduling is not completed indexing. Refreshing observed counts.` : `${state.operation} request completed.`;
     } catch (error) { state.operationError = error.message; }
     finally {
       state.operation = null; await refreshStatus();

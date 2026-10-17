@@ -7,7 +7,7 @@ The prior screenshot set passed functional tests but did not meet visual accepta
 - One coherent light theme, teal accent, restrained borders and consistent controls.
 - Search is the primary action, with search mode, provider and sorting grouped beneath it.
 - A narrow filter rail supports a two-column listing/map workspace on wide screens. Prices and essential property facts lead each card.
-- Developer diagnostics are collapsed below results. Material execution warnings remain visible, and the in-memory/demo label remains persistent.
+- Developer diagnostics are collapsed below results. Material execution warnings remain visible, and backend provenance is visible. Runtime simulation has been removed; fixture tests are separate.
 - Small screens retain the accessible filter disclosure and stack the listing/map sections.
 
 ## Why daisyUI
