@@ -20,14 +20,18 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     page.on('request', request => { if (request.url().endsWith('/api/search')) requests.push(request.postDataJSON()); });
     const cards = page.locator('.result-card');
     const views = page.locator(width < 900 ? '.mobile-views' : '.desktop-views');
-    const check = async (name, action) => { await action(); results.push({ width, name, status: 'pass' }); fs.writeFileSync(path.join(out, 'matrix.json'), JSON.stringify({ origin, results, errors }, null, 2)); };
+    const check = async (name, action) => { const outcome = await action(); results.push({ width, name, status: outcome?.notApplicable ? 'not-applicable' : 'pass', ...(outcome?.notApplicable ? { reason: outcome.notApplicable } : {}) }); fs.writeFileSync(path.join(out, 'matrix.json'), JSON.stringify({ origin, results, errors }, null, 2)); };
     const scroll = () => page.evaluate(() => ({ window: scrollY, list: document.querySelector('.result-list').scrollTop }));
     const sameScroll = (a, b) => assert(Math.abs(a.window - b.window) <= 2 && Math.abs(a.list - b.list) <= 2, `scroll changed ${JSON.stringify({a,b})}`);
     try {
       await check('01 real backend, long feed and no implicit map load', async () => {
         await page.goto(origin + '/search?q=garage');
+        await page.waitForFunction(()=>performance.getEntriesByName('searchlab-hydrated').length>0);
         await expect(cards).toHaveCount(18);
-        await expect(page.locator('.backend-provenance')).toContainText('881e3b5660242affee21832c');
+        await page.getByRole('button', { name: /^Show backend details/ }).click();
+        await expect(page.getByRole('dialog', { name: 'Request details' })).toContainText('881e3b5660242affee21832c');
+        await page.getByRole('button', { name: 'Close request details' }).click();
+        await expect(page.getByRole('dialog', { name: 'Request details' })).toHaveCount(0);
         await expect(page.getByTestId('results-count')).toHaveText('35 matches');
         assert(!requests.some(r => r.mapOnly), 'Map requested on initial List');
         await page.screenshot({ path: path.join(out, `${width}-01-feed.png`) });
@@ -111,8 +115,8 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
         await expect(page.locator('.map-column')).toBeFocused();
         await page.goBack(); await expect(page.locator('.results-workspace')).toHaveAttribute('data-view', 'list');
       });
-      await check('11 filter drawer close is keyboard reachable; background is inert', async () => {
-        if (width > 900) { await expect(page.getByRole('complementary', { name: 'Refine results' })).toBeVisible(); await expect(page.locator('.filter-close')).toBeHidden(); return; }
+      await check('11 mobile filter drawer close is keyboard reachable; background is inert', async () => {
+        if (width > 900) { await expect(page.getByRole('complementary', { name: 'Refine results' })).toBeVisible(); await expect(page.locator('.filter-close')).toBeHidden(); return { notApplicable: 'Desktop uses a persistent complementary filter panel; mobile drawer keyboard controls are not applicable.' }; }
         await page.getByRole('button', { name: 'Filters (0)' }).click();
         await expect(page.getByRole('dialog', { name: 'Refine results' })).toBeVisible();
         await expect(page.locator('.filter-close')).toBeFocused();
@@ -158,8 +162,10 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
       });
       await check('15 rapid typing cancels stale query and retains final real result', async () => {
         await page.goto(origin + '/search'); await expect(cards).toHaveCount(18);
+        await page.waitForFunction(()=>performance.getEntriesByName('searchlab-hydrated').length>0);
         await page.getByTestId('search-input').fill('garage'); await page.waitForTimeout(200);
         await page.getByTestId('search-input').fill('pool');
+        if (width < 901) await page.getByRole('button', { name: 'Search', exact: true }).click();
         await expect(page.getByTestId('results-count')).toHaveText('31 matches');
         await expect(page.getByTestId('search-input')).toHaveValue('pool');
         await expect(page.locator('.results-workspace')).toHaveAttribute('aria-busy', 'false');
@@ -167,6 +173,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
       });
       await check('16 real empty state and recovery', async () => {
         await page.getByTestId('search-input').fill('zzzznosuchpropertyzzzz');
+        if (width < 901) await page.getByRole('button', { name: 'Search', exact: true }).click();
         await expect(page.getByRole('heading', { name: 'No homes match this search' })).toBeVisible();
         await page.getByRole('button', { name: 'Clear search query' }).click(); await expect(cards).toHaveCount(18);
       });
@@ -214,7 +221,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
         await expect(page.locator('.mobile-views').getByRole('button',{name:'List',exact:true})).toHaveAttribute('aria-pressed','true');
         await expect(page.locator('.result-list')).toBeVisible();
       });
-      await check('20 closed overlay leaves mobile feed scrollable', async () => {
+      await check('20 closed overlay leaves mobile feed scrollable by mouse wheel emulation', async () => {
         await page.evaluate(()=>scrollTo(0,300)); const y = await page.evaluate(()=>scrollY);
         await page.mouse.move(200,500); await page.mouse.wheel(0,500); await page.waitForTimeout(100);
         assert(await page.evaluate(()=>scrollY) > y, 'Feed cannot scroll');
@@ -225,7 +232,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
         await expect(page.locator('dialog [role=alert]')).toContainText('no longer available');
         await page.getByRole('button',{name:'Close home details'}).click(); await expect(page.locator('dialog')).toHaveCount(0);
         await expect(cards).toHaveCount(18);
-        await expect(page.getByTestId('search-input')).toBeFocused();
+        await expect(page.getByTestId('results-heading')).toBeFocused();
       });
       await check('22 no application runtime errors', async () => assert(!errors.length, errors.join('\n')));
       await check('23 price-first then facet history preserves loaded page two', async () => {
@@ -269,5 +276,5 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
       await context.close();
     }
   }
-  await browser.close(); console.log(JSON.stringify({passed:results.length,out}));
+  await browser.close(); console.log(JSON.stringify({passed:results.filter(row=>row.status==='pass').length,notApplicable:results.filter(row=>row.status==='not-applicable').length,total:results.length,out}));
 })().catch(error=>{console.error(error);process.exit(1)});

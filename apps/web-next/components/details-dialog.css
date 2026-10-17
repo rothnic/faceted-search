@@ -1,10 +1,10 @@
 /* Native modal keeps the feed mounted and restores focus without scrolling it. */
 .home-details { position: fixed; inset: 0; width: min(620px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); margin: auto; padding: 0; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--ink); box-shadow: 0 12px 50px #12202e40; }
 .home-details::backdrop { background: #10202b80; }
-.detail-header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: white; }
-.detail-header h2 { margin: 0; font-size: 16px; }
-.detail-close { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--green-dark); background: white; font-weight: 600; }
-.detail-close span { font-size: 22px; }
+.detail-header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 10px 2px 18px; border-bottom: 1px solid var(--line); background: white; }
+.detail-header h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--muted); }
+.detail-close { display: grid; place-items: center; min-width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; }
+.detail-close span { font-size: 25px; line-height: 1; }
 .detail-content { padding: 8px 20px 24px; overflow-wrap: anywhere; }
 .detail-price { display: flex; align-items: center; gap: 12px; font-size: 26px; font-weight: 700; }
 .detail-content h3 { margin: 0; font-size: 21px; line-height: 1.35; }
@@ -19,6 +19,6 @@
 .detail-map { min-height: 44px; margin-top: 16px; padding: 10px 16px; border: 0; border-radius: 6px; color: white; background: var(--green); font-weight: 650; }
 @media (max-width: 520px) {
   .home-details { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 10px; }
-  .detail-header { padding: 8px 12px; }
+  .detail-header { padding: 2px 8px 2px 16px; }
   .detail-content { padding-inline: 16px; }
 }

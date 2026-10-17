@@ -95,13 +95,16 @@ export async function verifyRuntimeAuthenticity(api: string, database: string) {
     for (const width of [390, 1440]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       await page.goto(next.origin + '/search?q=garage');
-      await page.getByLabel('Backend provenance').waitFor();
-      assert.match(await page.getByLabel('Backend provenance').innerText(), /Responded postgres_native/);
+      await page.getByRole('button', { name: /^Show backend details/ }).click();
+      const provenance = await page.locator('.backend-provenance').innerText();
+      assert.match(provenance, /Responding provider\s+postgres_native/);
+      assert.match(provenance, new RegExp(identity.databaseFingerprint));
+      await page.getByRole('button', { name: 'Close request details' }).click();
       assert.match(await page.getByTestId('results-count').innerText(), /35/);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page overflow');
       await mkdir('test-results/real-screenshots', { recursive: true });
       await page.screenshot({ path: 'test-results/real-screenshots/next-authenticity-' + width + '.png', fullPage: true });
-      (evidence.browsers as unknown[]).push({ width, count: await page.getByTestId('results-count').innerText(), provenance: await page.getByLabel('Backend provenance').innerText() });
+      (evidence.browsers as unknown[]).push({ width, count: await page.getByTestId('results-count').innerText(), provenance });
       await page.close();
     }
     const wrong = await nextServer(api, 'wrong-dataset'); servers.push(wrong);

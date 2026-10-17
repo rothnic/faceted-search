@@ -45,7 +45,7 @@ export default function DetailsDialog({ hit: loadedHit, id, onClose, onMap, retu
     return () => {
       element.close();
       document.body.style.overflow = previousOverflow;
-      const target = returnFocus?.isConnected ? returnFocus : document.querySelector<HTMLElement>('[data-testid=search-input]');
+      const target = returnFocus?.isConnected ? returnFocus : document.querySelector<HTMLElement>('[data-testid=results-heading]');
       const map = document.querySelector<HTMLElement>('.results-workspace[data-view="map"] .map-column');
       if (map) { map.focus({ preventScroll: true }); return; }
       target?.focus({ preventScroll: true });
@@ -66,7 +66,7 @@ export default function DetailsDialog({ hit: loadedHit, id, onClose, onMap, retu
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }} onCancel={(event) => { event.preventDefault(); onClose(); }}>
-    <header className="detail-header"><h2 id="home-details-title">Home details</h2><button type="button" autoFocus className="detail-close" onClick={onClose} aria-label="Close home details">Back to results <span aria-hidden="true">×</span></button></header>
+    <header className="detail-header"><h2 id="home-details-title">Home details</h2><button type="button" autoFocus className="detail-close" onClick={onClose} aria-label="Close home details"><span aria-hidden="true">×</span></button></header>
     <div className="detail-content">
       {hit ? <>
         <p className="detail-price">{money(hit.price)} <span className="status-badge">{label(hit.listingStatus)}</span></p>

@@ -15,6 +15,8 @@ const profiles = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, rttMs: 40, throughputKbps: 10240, cpuSlowdownMultiplier: 1 }
 };
 const rows = [];
+// Mobile query timing now includes explicit draft Search submission; do not compare it
+// directly to the historical live-typing protocol. layoutShiftSum is not standard CLS.
 (async () => {
   const { default: lighthouse } = await import(pathToFileURL(path.join(tools, 'node_modules/lighthouse/core/index.js')));
   const launcher = await import(pathToFileURL(path.join(tools, 'node_modules/chrome-launcher/dist/index.js')));
@@ -52,12 +54,12 @@ const rows = [];
         await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:p.rttMs,downloadThroughput:p.throughputKbps*1024/8,uploadThroughput:p.throughputKbps*1024/8});
         await cdp.send('Emulation.setCPUThrottlingRate',{rate:p.cpuSlowdownMultiplier});
         await page.addInitScript(()=>{
-          window.__loading = {longTasks:[],paint:[],lcp:[],cls:0,firstResults:null,firstSearchDispatch:null,queryStart:null};
+          window.__loading = {longTasks:[],paint:[],lcp:[],layoutShiftSum:0,firstResults:null,firstSearchDispatch:null,queryStart:null};
           const x=window.__loading;
           for(const type of ['paint','largest-contentful-paint','layout-shift','longtask']) if(PerformanceObserver.supportedEntryTypes.includes(type)) new PerformanceObserver(list=>{for(const e of list.getEntries()){
             if(type==='paint') x.paint.push({name:e.name,startTime:e.startTime});
             if(type==='largest-contentful-paint')x.lcp.push(e.startTime);
-            if(type==='layout-shift'&&!e.hadRecentInput)x.cls+=e.value;
+            if(type==='layout-shift'&&!e.hadRecentInput)x.layoutShiftSum+=e.value;
             if(type==='longtask')x.longTasks.push({start:e.startTime,duration:e.duration});
           }}).observe({type,buffered:true});
           const fetchOriginal=window.fetch;
@@ -70,10 +72,12 @@ const rows = [];
           page.on('response',async response=>{if(response.url().endsWith('/api/search'))try{network.push(await response.json())}catch{}});
           await page.goto(origin+'/search?q=garage');
           await expectCount(page,18);
+          await page.waitForFunction(() => { const button = document.querySelector('.request-timing'); return !button || !button.disabled; });
           await page.waitForTimeout(300);
           const initial=await page.evaluate(()=>({measurements:window.__loading,navigation:performance.getEntriesByType('navigation')[0].toJSON(),resources:performance.getEntriesByType('resource').map(e=>e.toJSON()),hydrationMarker:performance.getEntriesByName('searchlab-hydrated')[0]?.startTime ?? null}));
           await page.evaluate(()=>{window.__loading.queryStart=performance.now()});
           await page.getByTestId('search-input').fill('pool');
+          if (p.mobile) await page.getByRole('button', { name: 'Search', exact: true }).click();
           await page.waitForFunction(()=>document.querySelector('[data-testid="results-count"]')?.textContent==='31 matches'&&document.querySelector('.results-workspace')?.getAttribute('aria-busy')==='false');
           const queryVisible=await page.evaluate(()=>performance.now()-window.__loading.queryStart);
           const data=network.find(x=>x.provenance)?.provenance;

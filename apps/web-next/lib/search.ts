@@ -76,6 +76,27 @@ export const emptySearchState = (): SearchState => ({
   savedSearchIds: []
 });
 
+export function readSearchState(params: URLSearchParams): SearchState {
+  const initial = emptySearchState();
+  const provider = params.get('provider');
+  if (provider && ['postgres_native', 'pg_search', 'meilisearch', 'typesense'].includes(provider)) initial.provider = provider as SearchProvider;
+  const mode = params.get('mode');
+  if (mode && ['keyword', 'semantic', 'hybrid'].includes(mode)) initial.mode = mode as SearchMode;
+  const sort = params.get('sort');
+  if (sort && ['relevance', 'price_asc', 'price_desc', 'newest'].includes(sort)) initial.sort = sort as SearchSort;
+  initial.q = params.get('q') ?? '';
+  for (const key of ['city', 'neighborhood', 'schoolDistrict', 'propertyType', 'bedrooms', 'amenities', 'listingStatus']) {
+    const values = params.getAll(key);
+    if (values.length) initial.filters[key] = key === 'bedrooms' ? values.map(Number).filter(Number.isFinite) : values;
+  }
+  for (const key of ['minPrice', 'maxPrice', 'minBathrooms', 'minSquareFeet', 'minYearBuilt', 'maxYearBuilt', 'minLotSize', 'maxLotSize']) {
+    const raw = params.get(key);
+    if (raw && Number.isFinite(Number(raw))) initial.filters[key] = Number(raw);
+  }
+  initial.savedSearchIds = params.getAll('savedSearchId');
+  return initial;
+}
+
 export function buildSearchRequest(state: SearchState, options: { page?: number; mapOnly?: boolean } = {}): SearchRequest {
   const filters = Object.fromEntries(
     Object.entries(state.filters).filter(([, value]) =>

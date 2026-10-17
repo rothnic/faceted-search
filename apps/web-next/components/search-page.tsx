@@ -2,12 +2,14 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import SearchQuery, { type PlaceSuggestion } from '@/components/search-query';
 import {
   activeFilterCount,
   buildSearchRequest,
   createLatestSearch,
   emptySearchState,
   postSearch,
+  readSearchState,
   type SearchFilters,
   type SearchHit,
   type SearchMode,
@@ -26,6 +28,10 @@ type ViewMode = 'split' | 'map' | 'list';
 const DetailsDialog = dynamic(() => import('@/components/details-dialog'), {
   ssr: false,
   loading: () => <div className="detail-loading" role="status">Opening home details…</div>
+});
+const DiagnosticsDialog = dynamic(() => import('@/components/diagnostics-dialog'), {
+  ssr: false,
+  loading: () => <div className="detail-loading" role="status">Opening request details…</div>
 });
 function readView(): ViewMode {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -76,25 +82,7 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 const title = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 
 function readUrlState(): SearchState {
-  const params = new URLSearchParams(window.location.search);
-  const initial = emptySearchState();
-  const provider = params.get('provider');
-  if (provider && ['postgres_native', 'pg_search', 'meilisearch', 'typesense'].includes(provider)) initial.provider = provider as SearchProvider;
-  const mode = params.get('mode');
-  if (mode && ['keyword', 'semantic', 'hybrid'].includes(mode)) initial.mode = mode as SearchMode;
-  const sort = params.get('sort');
-  if (sort && ['relevance', 'price_asc', 'price_desc', 'newest'].includes(sort)) initial.sort = sort as SearchSort;
-  initial.q = params.get('q') ?? '';
-  for (const key of ['city', 'neighborhood', 'schoolDistrict', 'propertyType', 'bedrooms', 'amenities', 'listingStatus']) {
-    const values = params.getAll(key);
-    if (values.length) initial.filters[key] = key === 'bedrooms' ? values.map(Number).filter(Number.isFinite) : values;
-  }
-  for (const key of ['minPrice', 'maxPrice', 'minBathrooms', 'minSquareFeet', 'minYearBuilt', 'maxYearBuilt', 'minLotSize', 'maxLotSize']) {
-    const raw = params.get(key);
-    if (raw && Number.isFinite(Number(raw))) initial.filters[key] = Number(raw);
-  }
-  initial.savedSearchIds = params.getAll('savedSearchId');
-  return initial;
+  return readSearchState(new URLSearchParams(window.location.search));
 }
 
 function syncUrl(state: SearchState, mode: 'push' | 'replace') {
@@ -125,7 +113,8 @@ function FilterPanel({
   open,
   panelRef,
   onClose,
-  visible
+  visible,
+  ready
 }: {
   filters: SearchFilters;
   facets: SearchResponse['facets'];
@@ -136,6 +125,7 @@ function FilterPanel({
   panelRef: React.Ref<HTMLElement>;
   onClose: () => void;
   visible: boolean;
+  ready: boolean;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [disclosed, setDisclosed] = useState<Record<string, boolean>>({ bedrooms: true, amenities: true });
@@ -145,6 +135,7 @@ function FilterPanel({
   });
   return (
     <aside ref={panelRef} className="filter-panel" data-open={open} aria-label="Refine results" aria-modal={open ? true : undefined} role={open ? 'dialog' : 'complementary'}>
+      <fieldset className="pending-controls" disabled={!ready}>
       <header className="filter-heading"><strong>Refine results</strong><button type="button" className="filter-close" onClick={onClose} aria-label="Close filters">Close</button><button type="button" className="text-button" onClick={onClear}>Clear all</button></header>
       <section className="range-group" aria-labelledby="price-filter-title">
         <h3 id="price-filter-title">Price range</h3>
@@ -172,46 +163,57 @@ function FilterPanel({
         </details>;
       })}
       {keys.length > 0 && <p className="filter-summary">{activeFilterCount(filters)} active {activeFilterCount(filters) === 1 ? 'filter' : 'filters'}</p>}
+      </fieldset>
     </aside>
   );
 }
 
-function Refinements({ filters, onRemove, onClear }: { filters: SearchFilters; onRemove: (key: string, value?: string | number) => void; onClear: () => void }) {
+function Refinements({ filters, onRemove, onClear, ready }: { ready: boolean; filters: SearchFilters; onRemove: (key: string, value?: string | number) => void; onClear: () => void }) {
   const values = Object.entries(filters).flatMap(([key, value]) =>
     Array.isArray(value) ? value.map((item) => ({ key, value: item, label: key === 'bedrooms' ? `${item} beds` : title(String(item)) })) :
       value !== undefined ? [{ key, value, label: key === 'maxPrice' ? `Under ${money(value)}` : key === 'minPrice' ? `Over ${money(value)}` : `${title(key)} ${value}` }] : []
   );
   if (!values.length) return null;
   return <div className="refinements-wrap" aria-label="Applied filters">
-    <div className="refinements" data-testid="active-filter-chips">{values.map((item) => <button className="chip" type="button" key={`${item.key}:${item.value}`} aria-label={`Remove ${title(item.key)}: ${item.label}`} onClick={() => onRemove(item.key, item.value)}><span>{item.label}</span><span aria-hidden="true">×</span></button>)}<button className="text-button clear-refinements" type="button" onClick={onClear}>Clear all</button></div>
+    <div className="refinements" data-testid="active-filter-chips">{values.map((item) => <button className="chip" type="button" disabled={!ready} key={`${item.key}:${item.value}`} aria-label={`Remove ${title(item.key)}: ${item.label}`} onClick={() => onRemove(item.key, item.value)}><span>{item.label}</span><span aria-hidden="true">×</span></button>)}<button className="text-button clear-refinements" type="button" disabled={!ready} onClick={onClear}>Clear all</button></div>
   </div>;
 }
 
-function ResultCard({ hit, selected, onSelect, onMap, onAmenity }: { hit: SearchHit; selected: boolean; onSelect: () => void; onMap: () => void; onAmenity: (value: string) => void }) {
+function ResultCard({ hit, selected, onSelect, onMap, onAmenity, ready, returnTo }: { hit: SearchHit; selected: boolean; ready: boolean; returnTo: string; onSelect: () => void; onMap: () => void; onAmenity: (value: string) => void }) {
   return <article className={`result-card${selected ? ' is-selected' : ''}`} data-house-id={hit.id}>
-    <button type="button" className="result-select" onClick={onSelect} aria-haspopup="dialog" aria-label={`View details: ${hit.title}`}>
+    <a className="result-select" href={`/homes/${encodeURIComponent(hit.id)}?returnTo=${encodeURIComponent(returnTo)}`} onClick={(event) => { if (!ready || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onSelect(); }} aria-haspopup={ready ? "dialog" : undefined} aria-label={`View details: ${hit.title}`}>
       <div className="result-topline"><strong>{money(hit.price)}</strong><span className="status-badge">{title(hit.listingStatus)}</span></div>
       <h3>{hit.title}</h3>
       <p className="result-location">{hit.city}{hit.neighborhood ? ` · ${hit.neighborhood}` : ''}</p>
       <div className="property-facts"><span>{hit.bedrooms} bd</span><span>{hit.bathrooms} ba</span><span>{hit.squareFeet.toLocaleString()} sqft</span>{hit.distanceMiles !== undefined && <span>{hit.distanceMiles.toFixed(1)} mi</span>}</div>
       <p className="result-description">{hit.description}</p>
-    </button>
-    <footer className="result-actions"><div className="amenity-tags">{hit.amenities.slice(0, 4).map((item) => <button type="button" className="amenity-tag" key={item} onClick={() => onAmenity(item)}>{title(item)}</button>)}</div><button type="button" className="text-button details-action" onClick={onMap}>Show on map</button></footer>
+    </a>
+    <footer className="result-actions"><div className="amenity-tags">{hit.amenities.slice(0, 4).map((item) => <button type="button" className="amenity-tag" disabled={!ready} key={item} onClick={() => onAmenity(item)}>{title(item)}</button>)}</div><button type="button" className="text-button details-action" disabled={!ready} onClick={onMap}>Show on map</button></footer>
   </article>;
 }
 
-export default function SearchPage() {
-  const [request, setRequest] = useState<SearchState>(emptySearchState);
+type InitialSearch = { request: SearchState; response: SearchResponse | null; error: string | null };
+
+export default function SearchPage({ initial }: { initial?: InitialSearch }) {
+  const [request, setRequest] = useState<SearchState>(() => initial?.request ?? emptySearchState());
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<ViewMode>('list');
   const [filterOpen, setFilterOpen] = useState(false);
   const [desktop, setDesktop] = useState(false);
-  const [response, setResponse] = useState<SearchResponse | null>(null);
-  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [response, setResponse] = useState<SearchResponse | null>(initial?.response ?? null);
+  const [hits, setHits] = useState<SearchHit[]>(initial?.response?.hits ?? []);
   const [mapResponse, setMapResponse] = useState<SearchResponse | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchFocusedRef = useRef(searchFocused);
+  searchFocusedRef.current = searchFocused;
+  const searchPosition = useRef<FeedPosition | null>(null);
+  const restoreSearchPosition = useRef(false);
+  const closingSearch = useRef(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const diagnosticsTrigger = useRef<HTMLElement | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
   const requestRef = useRef(request);
@@ -224,7 +226,7 @@ export default function SearchPage() {
   const closingDetails = useRef(false);
   const detailTrigger = useRef<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initial?.error ?? null);
   const [loadMore, setLoadMore] = useState(false);
   const drawerTrigger = useRef<HTMLButtonElement>(null);
   const filterPanel = useRef<HTMLElement>(null);
@@ -232,7 +234,9 @@ export default function SearchPage() {
   const mapController = useRef<ReturnType<typeof createLatestSearch<SearchResponse>> | null>(null);
   const historyMode = useRef<'push' | 'replace'>('replace');
   const appendNext = useRef(false);
-  const firstSearch = useRef(true);
+  const firstSearch = useRef(!initial);
+  const skipInitialSearch = useRef(Boolean(initial));
+  const searchImmediately = useRef(false);
   const filterCount = activeFilterCount(request.filters);
 
   if (!searchController.current) searchController.current = createLatestSearch(postSearch, 180);
@@ -244,6 +248,17 @@ export default function SearchPage() {
     if (window.history.state?.searchlabDetail) { closingDetails.current = true; window.history.back(); }
     else { writeUiUrl(view, null, false); setDetailId(null); }
   }, [view]);
+  const cancelFocusedSearch = useCallback(() => {
+    if (closingSearch.current) return;
+    if (window.history.state?.searchlabSearch) { closingSearch.current = true; window.history.back(); }
+    else { restoreSearchPosition.current = true; setSearchFocused(false); }
+  }, []);
+  useEffect(() => {
+    if (!showDiagnostics) return;
+    const closePending = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('.diagnostics-dialog[open]')) setShowDiagnostics(false); };
+    document.addEventListener('keydown', closePending);
+    return () => document.removeEventListener('keydown', closePending);
+  }, [showDiagnostics]);
   useEffect(() => {
     if (!detailId) return;
     const cancelPending = (event: KeyboardEvent) => {
@@ -255,19 +270,24 @@ export default function SearchPage() {
 
   useEffect(() => {
     performance.mark('searchlab-hydrated');
-    setRequest(readUrlState());
+    const urlRequest = readUrlState();
+    if (!initial || criteriaKey(initial.request) !== criteriaKey(urlRequest)) setRequest(urlRequest);
     setView(readView());
     if (readView() === 'list' && new URLSearchParams(window.location.search).get('view') === 'split') writeUiUrl('list', new URLSearchParams(window.location.search).get('home'), false);
     setDetailId(new URLSearchParams(window.location.search).get('home'));
     setReady(true);
     const restore = () => {
       closingDetails.current = false;
+      closingSearch.current = false;
       const next = readUrlState();
       const nextHome = new URLSearchParams(window.location.search).get('home');
       const previousDetail = detailIdRef.current;
       const previousView = viewRef.current;
       const sameCriteria = criteriaKey(next) === criteriaKey(requestRef.current);
       const nextView = readView();
+      const nextSearch = window.history.state?.searchlabSearch === true && !window.matchMedia('(min-width: 901px)').matches;
+      restoreSearchPosition.current = searchFocusedRef.current && !nextSearch && sameCriteria;
+      setSearchFocused(nextSearch);
       if (nextView === 'list' && new URLSearchParams(window.location.search).get('view') === 'split') writeUiUrl('list', new URLSearchParams(window.location.search).get('home'), false);
       if (nextView !== previousView && previousView !== 'map' && !previousDetail) feedScroll.current = readFeedPosition();
       setView(nextView);
@@ -291,6 +311,10 @@ export default function SearchPage() {
     if (!ready || !searchController.current) return;
     syncUrl(request, historyMode.current);
     historyMode.current = 'replace';
+    if (skipInitialSearch.current) {
+      skipInitialSearch.current = false;
+      if (initial && criteriaKey(request) === criteriaKey(initial.request)) return;
+    }
     const searchRequest = buildSearchRequest(request);
     const cancel = searchController.current.schedule(searchRequest, {
       onStart: () => { setLoading(true); setError(null); },
@@ -309,8 +333,9 @@ export default function SearchPage() {
         setLoading(false);
         setLoadMore(false);
       }
-    }, firstSearch.current ? 0 : undefined);
+    }, firstSearch.current || searchImmediately.current ? 0 : undefined);
     firstSearch.current = false;
+    searchImmediately.current = false;
     return cancel;
   }, [request, ready]);
 
@@ -331,7 +356,7 @@ export default function SearchPage() {
     const media = window.matchMedia('(min-width: 901px)');
     const resize = () => {
       setDesktop(media.matches);
-      if (media.matches) setFilterOpen(false);
+      if (media.matches) { setFilterOpen(false); if (searchFocusedRef.current) cancelFocusedSearch(); }
       else {
         setView((current) => current === 'split' ? 'list' : current);
         if (new URLSearchParams(window.location.search).get('view') === 'split') writeUiUrl('list', new URLSearchParams(window.location.search).get('home'), false);
@@ -340,7 +365,17 @@ export default function SearchPage() {
     resize();
     media.addEventListener('change', resize);
     return () => media.removeEventListener('change', resize);
-  }, []);
+  }, [cancelFocusedSearch]);
+
+  useEffect(() => {
+    if (searchFocused || !restoreSearchPosition.current) return;
+    restoreSearchPosition.current = false;
+    const frame = requestAnimationFrame(() => {
+      if (searchPosition.current) restoreFeedPosition(searchPosition.current, true);
+      if (viewRef.current === 'map') document.querySelector<HTMLElement>('.map-column')?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchFocused]);
 
   useEffect(() => {
     if (detailId) return;
@@ -396,6 +431,34 @@ export default function SearchPage() {
     url.searchParams.delete('home');
     window.history.replaceState({ ...window.history.state, searchlabDetail: false }, '', url);
   }, []);
+
+  const openFocusedSearch = () => {
+    if (searchFocusedRef.current) return;
+    searchFocusedRef.current = true;
+    searchPosition.current = readFeedPosition();
+    restoreSearchPosition.current = false;
+    window.history.pushState({ ...window.history.state, searchlabSearch: true }, '', window.location.href);
+    setSearchFocused(true);
+  };
+  const commitSearch = (query: string, place?: PlaceSuggestion) => {
+    if (!searchFocused) {
+      searchImmediately.current = true;
+      update((current) => ({ ...current, q: query }), 'replace');
+      return;
+    }
+    const next = { ...request, q: place ? '' : query, filters: place ? { ...request.filters, [place.field]: [place.value] } : request.filters };
+    if (criteriaKey(next) === criteriaKey(request)) { cancelFocusedSearch(); return; }
+    restoreSearchPosition.current = false;
+    window.history.replaceState({ ...window.history.state, searchlabSearch: false }, '', window.location.href);
+    setSearchFocused(false);
+    searchImmediately.current = true;
+    update(() => next, 'replace');
+    requestAnimationFrame(() => {
+      document.querySelector('.result-list')?.scrollTo(0, 0);
+      window.scrollTo(0, 0);
+      document.querySelector<HTMLElement>('[data-testid=results-heading]')?.focus({ preventScroll: true });
+    });
+  };
 
   const toggleFilter = useCallback((key: string, value: string | number, checked: boolean) => {
     update((current) => {
@@ -471,52 +534,53 @@ export default function SearchPage() {
     setRequest((current) => ({ ...current, page: response.page + 1 }));
   };
 
+  const returnParams = new URLSearchParams({ provider: request.provider, mode: request.mode, sort: request.sort });
+  if (request.q) returnParams.set('q', request.q);
+  for (const [key, value] of Object.entries(request.filters)) {
+    for (const item of value === undefined ? [] : Array.isArray(value) ? value : [value]) returnParams.append(key, String(item));
+  }
+  request.savedSearchIds.forEach(id => returnParams.append('savedSearchId', id));
+  const progressiveReturnTo = '/search?' + returnParams.toString();
   const summary = response ? response.totalInventory == null ? `${response.totalHits.toLocaleString()} matches` : `${response.totalHits.toLocaleString()} of ${response.totalInventory.toLocaleString()}` : error ? 'Unavailable' : 'Loading results';
 
   return <main className="searchlab-shell">
-
-
+    {!ready && <span className="controls-pending" role="status">Preparing filters and map… Search and home links are ready.</span>}
     <section className="search-controls" data-testid="search-toolbar" aria-label="Search settings">
-      <label className="query-control"><span className="sr-only">Search listings</span><span aria-hidden="true" className="search-glyph">⌕</span><input type="search" data-testid="search-input" value={request.q} placeholder="Search homes, places, features…" onChange={(event) => update((current) => ({ ...current, q: event.target.value }), 'replace')} /><button type="button" className="clear-query" aria-label="Clear search query" hidden={!request.q} onClick={() => update((current) => ({ ...current, q: '' }))}>×</button></label>
-      <label className="desktop-setting">Mode<select value={request.mode} onChange={(event) => update((current) => ({ ...current, mode: event.target.value as SearchMode }))}><option value="keyword">Keyword</option><option value="hybrid">Hybrid</option><option value="semantic">Semantic</option></select></label>
-      <label className="desktop-setting">Provider<select value={request.provider} onChange={(event) => update((current) => ({ ...current, provider: event.target.value as SearchProvider }))}><option value="postgres_native">PostgreSQL</option><option value="pg_search">PostgreSQL · BM25</option><option value="meilisearch">Meilisearch</option><option value="typesense">Typesense</option></select></label>
-      <details className="more-settings"><summary>More settings</summary><div className="settings-popover"><label>Mode<select value={request.mode} onChange={(event) => update((current) => ({ ...current, mode: event.target.value as SearchMode }))}><option value="keyword">Keyword</option><option value="hybrid">Hybrid</option><option value="semantic">Semantic</option></select></label><label>Provider<select value={request.provider} onChange={(event) => update((current) => ({ ...current, provider: event.target.value as SearchProvider }))}><option value="postgres_native">PostgreSQL</option><option value="pg_search">PostgreSQL · BM25</option><option value="meilisearch">Meilisearch</option><option value="typesense">Typesense</option></select></label></div></details>
+      <SearchQuery ready={ready} request={request} response={response} settled={!loading && !error} focused={searchFocused} onOpen={openFocusedSearch} onCancel={cancelFocusedSearch} onCommit={commitSearch} onDesktopChange={(query) => update((current) => ({ ...current, q: query }), 'replace')} />
+      <label className="desktop-setting">Mode<select disabled={!ready} value={request.mode} onChange={(event) => update((current) => ({ ...current, mode: event.target.value as SearchMode }))}><option value="keyword">Keyword</option><option value="hybrid">Hybrid</option><option value="semantic">Semantic</option></select></label>
+      <label className="desktop-setting">Provider<select disabled={!ready} value={request.provider} onChange={(event) => update((current) => ({ ...current, provider: event.target.value as SearchProvider }))}><option value="postgres_native">PostgreSQL</option><option value="pg_search">PostgreSQL · BM25</option><option value="meilisearch">Meilisearch</option><option value="typesense">Typesense</option></select></label>
+      <details className="more-settings"><summary>More settings</summary><div className="settings-popover"><label>Mode<select disabled={!ready} value={request.mode} onChange={(event) => update((current) => ({ ...current, mode: event.target.value as SearchMode }))}><option value="keyword">Keyword</option><option value="hybrid">Hybrid</option><option value="semantic">Semantic</option></select></label><label>Provider<select disabled={!ready} value={request.provider} onChange={(event) => update((current) => ({ ...current, provider: event.target.value as SearchProvider }))}><option value="postgres_native">PostgreSQL</option><option value="pg_search">PostgreSQL · BM25</option><option value="meilisearch">Meilisearch</option><option value="typesense">Typesense</option></select></label></div></details>
     </section>
 
     <section className="mobile-toolbar" aria-label="Search controls">
-      <button ref={drawerTrigger} className="toolbar-button filters-trigger" type="button" onClick={() => setFilterOpen(true)}>Filters ({filterCount})</button>
-      <label className="sort-control"><span className="sr-only">Sort results</span><select value={request.sort} onChange={(event) => update((current) => ({ ...current, sort: event.target.value as SearchSort }))}><option value="relevance">Relevance</option><option value="price_asc">Price ↑</option><option value="price_desc">Price ↓</option><option value="newest">Newest</option></select></label>
-      <div className="view-tabs mobile-views" role="group" aria-label="Results view"><button type="button" aria-pressed={view === 'map'} onClick={() => changeView('map')}>Map</button><button type="button" aria-pressed={view === 'list'} onClick={() => changeView('list')}>List</button></div>
-      <details className="mobile-settings"><summary>More</summary><div className="settings-popover"><label>Mode<select value={request.mode} onChange={(event) => update((current) => ({ ...current, mode: event.target.value as SearchMode }))}><option value="keyword">Keyword</option><option value="hybrid">Hybrid</option><option value="semantic">Semantic</option></select></label><label>Provider<select value={request.provider} onChange={(event) => update((current) => ({ ...current, provider: event.target.value as SearchProvider }))}><option value="postgres_native">PostgreSQL</option><option value="pg_search">PostgreSQL · BM25</option><option value="meilisearch">Meilisearch</option><option value="typesense">Typesense</option></select></label></div></details>
+      <button ref={drawerTrigger} className="toolbar-button filters-trigger" type="button" disabled={!ready} onClick={() => setFilterOpen(true)}>Filters ({filterCount})</button>
+      <label className="sort-control"><span className="sr-only">Sort results</span><select disabled={!ready} value={request.sort} onChange={(event) => update((current) => ({ ...current, sort: event.target.value as SearchSort }))}><option value="relevance">Relevance</option><option value="price_asc">Price ↑</option><option value="price_desc">Price ↓</option><option value="newest">Newest</option></select></label>
+      <div className="view-tabs mobile-views" role="group" aria-label="Results view"><button type="button" disabled={!ready} aria-pressed={view === 'map'} onClick={() => changeView('map')}>Map</button><button type="button" disabled={!ready} aria-pressed={view === 'list'} onClick={() => changeView('list')}>List</button></div>
+      <details className="mobile-settings"><summary>More</summary><div className="settings-popover"><label>Mode<select disabled={!ready} value={request.mode} onChange={(event) => update((current) => ({ ...current, mode: event.target.value as SearchMode }))}><option value="keyword">Keyword</option><option value="hybrid">Hybrid</option><option value="semantic">Semantic</option></select></label><label>Provider<select disabled={!ready} value={request.provider} onChange={(event) => update((current) => ({ ...current, provider: event.target.value as SearchProvider }))}><option value="postgres_native">PostgreSQL</option><option value="pg_search">PostgreSQL · BM25</option><option value="meilisearch">Meilisearch</option><option value="typesense">Typesense</option></select></label></div></details>
     </section>
 
     <div className="page-layout">
       {filterOpen && <button type="button" className="drawer-backdrop" tabIndex={-1} aria-label="Close filters" onClick={() => setFilterOpen(false)} />}
-      <FilterPanel panelRef={filterPanel} visible={desktop || filterOpen} onClose={() => setFilterOpen(false)} filters={request.filters} facets={facetData} onToggle={toggleFilter} onRange={setRange} onClear={() => { clearFilters(); setFilterOpen(false); }} open={filterOpen} />
+      <FilterPanel ready={ready} panelRef={filterPanel} visible={desktop || filterOpen} onClose={() => setFilterOpen(false)} filters={request.filters} facets={facetData} onToggle={toggleFilter} onRange={setRange} onClear={() => { clearFilters(); setFilterOpen(false); }} open={filterOpen} />
       <section className="results-column" aria-label="Search results">
         <header className="results-header">
-          <div className="results-heading"><h1 data-testid="results-heading">Homes</h1><span className="result-count" data-testid="results-count">{summary}</span></div>
+          <div className="results-heading"><h1 data-testid="results-heading" tabIndex={-1}>Homes</h1><span className="result-count" data-testid="results-count" role="status" aria-live="polite">{loading && response ? 'Searching…' : summary}</span>{response?.provenance && <button className="request-timing" type="button" disabled={!ready} aria-label={`Show backend details. Last ${response.browserFetchMs !== undefined ? 'browser fetch and parsing' : 'gateway request'} ${response.browserFetchMs ?? response.gatewayTimingMs ?? response.provenance.timing.apiMs} milliseconds`} title="Last completed request; show backend details" onClick={(event) => { diagnosticsTrigger.current = event.currentTarget; setShowDiagnostics(true); }}><svg aria-hidden="true" width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="10" cy="10" r="7.5" /><path d="M10 5v5l3 2" /></svg><span>{Math.round(response.browserFetchMs ?? response.gatewayTimingMs ?? response.provenance.timing.apiMs)} ms {response.browserFetchMs !== undefined ? 'fetch' : 'server'}</span></button>}</div>
           <div className="results-actions">
-            <div className="view-tabs desktop-views" role="group" aria-label="Results view"><button type="button" aria-pressed={view === 'split'} onClick={() => changeView('split')}>Split</button><button type="button" aria-pressed={view === 'map'} onClick={() => changeView('map')}>Map</button><button type="button" aria-pressed={view === 'list'} onClick={() => changeView('list')}>List</button></div>
-            <label className="sort-control desktop-sort"><span className="sr-only">Sort results</span><select value={request.sort} onChange={(event) => update((current) => ({ ...current, sort: event.target.value as SearchSort }))}><option value="relevance">Sort: Relevance</option><option value="price_asc">Sort: Price ↑</option><option value="price_desc">Sort: Price ↓</option><option value="newest">Sort: Newest</option></select></label>
+            <div className="view-tabs desktop-views" role="group" aria-label="Results view"><button type="button" disabled={!ready} aria-pressed={view === 'split'} onClick={() => changeView('split')}>Split</button><button type="button" disabled={!ready} aria-pressed={view === 'map'} onClick={() => changeView('map')}>Map</button><button type="button" disabled={!ready} aria-pressed={view === 'list'} onClick={() => changeView('list')}>List</button></div>
+            <label className="sort-control desktop-sort"><span className="sr-only">Sort results</span><select disabled={!ready} value={request.sort} onChange={(event) => update((current) => ({ ...current, sort: event.target.value as SearchSort }))}><option value="relevance">Sort: Relevance</option><option value="price_asc">Sort: Price ↑</option><option value="price_desc">Sort: Price ↓</option><option value="newest">Sort: Newest</option></select></label>
             <button type="button" data-testid="save-search" className="save-search" disabled title="Saved-search actions will be migrated in a follow-up slice">Save search</button>
           </div>
         </header>
 
-        {response?.provenance && <section className="backend-provenance" aria-label="Backend provenance" role="status">
-          <span>{loading ? 'Updating · last completed query: ' : ''}Selected <strong>{response.provenance.selectedProvider}</strong> · Responded <strong>{response.provenance.respondingProvider}</strong> · {response.provenance.execution}</span>
-          <span>Dataset <strong>{response.provenance.dataset.id}</strong> · {response.provenance.dataset.count.toLocaleString()} source records (PostgreSQL) · DB {response.provenance.dataset.databaseFingerprint} · Revision {response.provenance.dataset.revision.slice(0, 12)}</span>
-          <span>API {response.provenance.timing.apiMs} ms · Search operation {response.provenance.timing.searchMs} ms · Gateway {response.gatewayTimingMs ?? '—'} ms · Browser fetch {response.browserFetchMs ?? '—'} ms</span>
-        </section>}
-        <Refinements filters={request.filters} onRemove={removeFilter} onClear={clearFilters} />
-        {error && <div className="search-error" role="alert"><strong>Search unavailable</strong><span>{error}</span><button type="button" onClick={() => setRequest((current) => ({ ...current }))}>Retry</button></div>}
+        <Refinements ready={ready} filters={request.filters} onRemove={removeFilter} onClear={clearFilters} />
+        {error && <div className="search-error" role="alert"><strong>Search unavailable</strong><span>{error}</span><button type="button" disabled={!ready} onClick={() => setRequest((current) => ({ ...current }))}>Retry</button></div>}
         {response?.debug?.warnings?.map((warning) => <p className="backend-warning" key={warning}>{warning}</p>)}
         {!response && !error && <div className="result-skeletons" aria-label="Loading results" aria-busy="true"><div /><div /><div /></div>}
-        {response && hits.length === 0 && !error && <div className="empty-results"><h2>No homes match this search</h2><p>Try fewer filters or a broader search.</p><button type="button" onClick={clearFilters}>Clear filters</button></div>}
+        {response && hits.length === 0 && !error && <div className="empty-results"><h2>No homes match this search</h2><p>Try fewer filters or a broader search.</p><button type="button" disabled={!ready} onClick={clearFilters}>Clear filters</button></div>}
         {response && hits.length > 0 && <div className={`results-workspace view-${viewLabel.toLowerCase()}`} data-view={view} aria-busy={loading}>
           {<div className="result-list" aria-label="Homes"><div className="result-list-inner">
-            {hits.map((hit) => <ResultCard key={hit.id} hit={hit} selected={hit.id === selectedId} onSelect={() => openDetails(hit)} onMap={() => showOnMap(hit.id)} onAmenity={(value) => toggleFilter('amenities', value, true)} />)}
-            {hits.length < response.totalHits && <button type="button" className="load-more" onClick={loadNextPage} disabled={loading || Boolean(error)}>{loadMore ? 'Loading more…' : 'Show more homes'}</button>}
+            {hits.map((hit) => <ResultCard key={hit.id} ready={ready} returnTo={progressiveReturnTo} hit={hit} selected={hit.id === selectedId} onSelect={() => openDetails(hit)} onMap={() => showOnMap(hit.id)} onAmenity={(value) => toggleFilter('amenities', value, true)} />)}
+            {hits.length < response.totalHits && <button type="button" className="load-more" onClick={loadNextPage} disabled={!ready || loading || Boolean(error)}>{loadMore ? 'Loading more…' : 'Show more homes'}</button>}
           </div></div>}
           {view !== 'list' && <section className="map-column" tabIndex={-1} aria-label="Map of matching homes">
             {mapLoading && !mapResponse && <div className="map-loading" role="status">Loading map results…</div>}
@@ -529,5 +593,6 @@ export default function SearchPage() {
       </section>
     </div>
     {detailId && <DetailsDialog id={detailId} hit={hits.find((hit) => hit.id === detailId) ?? null} onClose={closeDetails} onMap={() => showOnMap(detailId)} returnFocus={detailTrigger.current} />}
+    {showDiagnostics && response && <DiagnosticsDialog response={response} onClose={() => setShowDiagnostics(false)} returnFocus={diagnosticsTrigger.current} />}
   </main>;
 }
