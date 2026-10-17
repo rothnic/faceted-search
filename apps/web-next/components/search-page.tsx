@@ -210,8 +210,10 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
   const [desktop, setDesktop] = useState(false);
   const [response, setResponse] = useState<SearchResponse | null>(initial?.response ?? null);
   const [hits, setHits] = useState<SearchHit[]>(initial?.response?.hits ?? []);
-  const [mapResponse, setMapResponse] = useState<SearchResponse | null>(null);
+  const [mapResult, setMapResult] = useState<{ response: SearchResponse; criteria: string } | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState(false);
+  const [mapRetry, setMapRetry] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -353,12 +355,13 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
       setMapLoading(false);
       return;
     }
+    setMapLoading(true);
+    setMapError(false);
     return mapController.current!.schedule(buildSearchRequest(request, { mapOnly: true }), {
-      onStart: () => { setMapLoading(true); setMapResponse(null); },
-      onSuccess: (next) => { setMapResponse(next); setMapLoading(false); },
-      onError: () => { setMapResponse(null); setMapLoading(false); }
+      onSuccess: (next) => { setMapResult({ response: next, criteria: criteriaKey(request) }); setMapLoading(false); },
+      onError: () => { setMapError(true); setMapLoading(false); }
     });
-  }, [request.provider, request.mode, request.q, request.filters, request.sort, request.savedSearchIds, ready, view]);
+  }, [request.provider, request.mode, request.q, request.filters, request.sort, request.savedSearchIds, ready, view, mapRetry]);
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 901px)');
@@ -528,7 +531,17 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
     setView('map');
     requestAnimationFrame(() => document.querySelector<HTMLElement>('.map-column')?.focus({ preventScroll: true }));
   };
+  const mapResponse = mapResult?.response ?? null;
   const markers = mapResponse?.mapHits ?? [];
+  const retryMap = () => { setMapLoading(true); setMapError(false); setMapRetry((attempt) => attempt + 1); };
+  const previousMap = Boolean(mapResult && (mapLoading || mapError || mapResult.criteria !== criteriaKey(request)));
+  const mapFeedback = previousMap ? {
+    failed: mapError,
+    message: mapError
+      ? 'Map update failed. Showing previous results; they may not match the current search.'
+      : 'Showing previous map results while updating for the current search.',
+    retry: retryMap
+  } : undefined;
   const activeListHit = hits.find((hit) => hit.id === selectedId) ?? null;
   const activeHit = activeListHit ?? markers.find((hit) => hit.id === selectedId) ?? null;
   const facetData = response?.facets ?? {};
@@ -591,9 +604,9 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
             {hits.length < response.totalHits && <button type="button" className="load-more" onClick={loadNextPage} disabled={!ready || loading || Boolean(error)}>{loadMore ? 'Loading more…' : 'Show more homes'}</button>}
           </div></div>}
           {view !== 'list' && <section className="map-column" tabIndex={-1} aria-label="Map of matching homes">
-            {mapLoading && !mapResponse && <div className="map-loading" role="status">Loading map results…</div>}
-            {mapResponse && <MapPanel hits={markers} selectedId={selectedId} onSelect={setSelectedId} />}
-            {!mapLoading && !mapResponse && <div className="map-unavailable" role="status">Map data is unavailable. The list and filters are still ready.</div>}
+            {!mapResponse && !mapError && <div className="map-loading" role="status">Loading map results…</div>}
+            {mapResponse && <MapPanel hits={markers} selectedId={selectedId} onSelect={setSelectedId} feedback={mapFeedback} />}
+            {mapError && !mapResponse && <div className="map-unavailable" role="alert"><div><span>Map data is unavailable. The list and filters are still ready.</span><button className="map-retry" type="button" onClick={(event) => { event.currentTarget.closest<HTMLElement>('.map-column')?.focus({ preventScroll: true }); retryMap(); }}>Retry map</button></div></div>}
             {activeHit && <aside className="map-preview" aria-live="polite"><button type="button" aria-label="Close selected home" onClick={() => setSelectedId(null)}>×</button><strong>{money(activeHit.price)}</strong><h2>{activeHit.title}</h2><p>{activeHit.city}{activeHit.neighborhood ? ` · ${activeHit.neighborhood}` : ''}</p>{activeListHit && <span>{activeListHit.bedrooms} bd · {activeListHit.bathrooms} ba · {activeListHit.squareFeet.toLocaleString()} sqft</span>}</aside>}
           </section>}
         </div>}

@@ -102,6 +102,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .map-column { position: relative; min-height: 380px; overflow: hidden; border: 1px solid #dbe3e5; border-radius: 8px; background: #eef3f2; }
 .map-canvas { position: absolute; inset: 0; z-index: 1; min-height: 380px; }
 .map-loading, .map-unavailable { min-height: 380px; display: grid; place-items: center; padding: 24px; color: var(--muted); text-align: center; }
+.map-unavailable > div { display: grid; justify-items: center; gap: 12px; max-width: 32ch; }
+.map-retry { min-width: 44px; min-height: 44px; padding: 8px 12px; border: 1px solid #cbd6d6; border-radius: 8px; color: var(--ink); background: white; font: inherit; font-weight: 600; cursor: pointer; }
 .map-preview { position: absolute; z-index: 500; left: 14px; right: 14px; bottom: 14px; display: grid; gap: 5px; padding: 13px 15px; border: 1px solid #d8e2e2; border-radius: 8px; background: white; box-shadow: 0 5px 18px #20323729; }
 .map-preview > button { position: absolute; top: 5px; right: 8px; border: 0; color: #53616b; background: transparent; font-size: 19px; }
 .map-preview strong { font-size: 17px; }

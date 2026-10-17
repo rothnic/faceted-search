@@ -8,7 +8,19 @@ import type { SearchResponse } from '@/lib/search';
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format;
 
 type MapHit = SearchResponse['mapHits'][number];
-type MapProps = { hits: MapHit[]; selectedId: string | null; onSelect: (id: string) => void };
+type MapFeedbackState = { message: string; failed: boolean; retry: () => void };
+type MapProps = { hits: MapHit[]; selectedId: string | null; onSelect: (id: string) => void; feedback?: MapFeedbackState };
+
+function MapFeedback({ feedback }: { feedback?: MapFeedbackState }) {
+  if (!feedback) return null;
+  return <div className="map-feedback" role={feedback.failed ? 'alert' : 'status'}>
+    <span>{feedback.message}</span>
+    {feedback.failed && <button className="map-retry" type="button" onClick={(event) => {
+      event.currentTarget.closest<HTMLElement>('[data-map-region]')?.focus({ preventScroll: true });
+      feedback.retry();
+    }}>Retry map</button>}
+  </div>;
+}
 
 function MapCanvas({ hits, selectedId, onSelect, interactive }: MapProps & { interactive: boolean }) {
   const container = useRef<HTMLDivElement>(null);
@@ -123,7 +135,7 @@ function ExpandIcon({ collapse = false }: { collapse?: boolean }) {
   </svg>;
 }
 
-function ExpandedMap({ hits, selectedId, onSelect, onClose, trigger }: MapProps & { onClose: () => void; trigger: HTMLButtonElement | null }) {
+function ExpandedMap({ hits, selectedId, onSelect, feedback, onClose, trigger }: MapProps & { onClose: () => void; trigger: HTMLButtonElement | null }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const selected = hits.find((hit) => hit.id === selectedId);
   useEffect(() => {
@@ -147,7 +159,8 @@ function ExpandedMap({ hits, selectedId, onSelect, onClose, trigger }: MapProps 
   }, [trigger]);
   return <dialog ref={dialog} className="expanded-map" aria-label="Expanded map" onCancel={(event) => { event.preventDefault(); onClose(); }}>
     <header className="expanded-map-header"><h2>Map</h2><button type="button" autoFocus className="map-icon-button" aria-label="Close expanded map" title="Close expanded map" onClick={onClose}><ExpandIcon collapse /></button></header>
-    <div className="expanded-map-stage">
+    <div className="expanded-map-stage" data-map-region tabIndex={-1} role="group" aria-label="Expanded map results">
+      <MapFeedback feedback={feedback} />
       <MapCanvas hits={hits} selectedId={selectedId} onSelect={onSelect} interactive />
       {selected && <aside className="expanded-map-selection" role="status"><strong>{money(selected.price)}</strong><span>{selected.title}</span><small>{selected.city}</small></aside>}
     </div>
@@ -165,7 +178,8 @@ export default function MapPanel(props: MapProps) {
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
-  return <div className={`map-panel${mobile ? ' embedded-map-static' : ''}`}>
+  return <div className={`map-panel${mobile ? ' embedded-map-static' : ''}`} data-map-region tabIndex={-1} role="group" aria-label="Map results">
+    {!expanded && <MapFeedback feedback={props.feedback} />}
     <MapCanvas {...props} interactive={!mobile} />
     <button ref={trigger} type="button" className="map-icon-button map-expand" aria-label="Expand map" title="Expand map" aria-haspopup="dialog" aria-expanded={expanded} onClick={() => setExpanded(true)}><ExpandIcon /></button>
     {mobile && expanded && <ExpandedMap {...props} trigger={trigger.current} onClose={() => setExpanded(false)} />}
