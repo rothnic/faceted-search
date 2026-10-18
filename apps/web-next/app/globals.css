@@ -64,6 +64,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .results-header { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .results-heading { min-width: 0; display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
 .results-heading h1 { margin: 0; font-size: 21px; letter-spacing: -.02em; }
+.results-heading h1[data-pointer-focus="true"]:focus { outline: none; }
 .result-count { min-width: 90px; color: #68747d; font-size: 13px; }
 .results-actions { display: flex; align-items: center; gap: 12px; }
 .view-tabs { display: inline-flex; align-items: center; padding: 2px; border: 1px solid #d3dcdf; border-radius: 6px; background: white; }

@@ -451,7 +451,7 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
     window.history.pushState({ ...window.history.state, searchlabSearch: true }, '', window.location.href);
     setSearchFocused(true);
   };
-  const commitSearch = (query: string, place?: PlaceSuggestion) => {
+  const commitSearch = (query: string, place?: PlaceSuggestion, pointerFocus = false) => {
     if (!searchFocused) {
       searchImmediately.current = true;
       update((current) => ({ ...current, q: query }), 'replace');
@@ -467,7 +467,10 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
     requestAnimationFrame(() => {
       document.querySelector('.result-list')?.scrollTo(0, 0);
       window.scrollTo(0, 0);
-      document.querySelector<HTMLElement>('[data-testid=results-heading]')?.focus({ preventScroll: true });
+      const heading = document.querySelector<HTMLElement>('[data-testid=results-heading]');
+      if (pointerFocus) heading?.setAttribute('data-pointer-focus', 'true');
+      else heading?.removeAttribute('data-pointer-focus');
+      heading?.focus({ preventScroll: true });
     });
   };
 
@@ -585,7 +588,7 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
       <FilterPanel ready={ready} panelRef={filterPanel} visible={desktop || filterOpen} onClose={() => setFilterOpen(false)} filters={request.filters} facets={facetData} onToggle={toggleFilter} onRange={setRange} onClear={() => { clearFilters(); setFilterOpen(false); }} open={filterOpen} />
       <section className="results-column" aria-label="Search results">
         <header className="results-header">
-          <div className="results-heading"><h1 data-testid="results-heading" tabIndex={-1}>Homes</h1><span className="result-count" data-testid="results-count" role="status" aria-live="polite">{loading && response ? 'Searching…' : summary}</span>{response?.provenance && <button className="request-timing" type="button" disabled={!ready} aria-label={`Show backend details. Last ${response.browserFetchMs !== undefined ? 'browser fetch and parsing' : 'gateway request'} ${response.browserFetchMs ?? response.gatewayTimingMs ?? response.provenance.timing.apiMs} milliseconds`} title="Last completed request; show backend details" onClick={(event) => { diagnosticsTrigger.current = event.currentTarget; setShowDiagnostics(true); }}><svg aria-hidden="true" width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="10" cy="10" r="7.5" /><path d="M10 5v5l3 2" /></svg><span>{Math.round(response.browserFetchMs ?? response.gatewayTimingMs ?? response.provenance.timing.apiMs)} ms {response.browserFetchMs !== undefined ? 'fetch' : 'server'}</span></button>}</div>
+          <div className="results-heading"><h1 data-testid="results-heading" tabIndex={-1} onBlur={(event) => event.currentTarget.removeAttribute('data-pointer-focus')}>Homes</h1><span className="result-count" data-testid="results-count" role="status" aria-live="polite">{loading && response ? 'Searching…' : summary}</span>{response?.provenance && <button className="request-timing" type="button" disabled={!ready} aria-label={`Show backend details. Last ${response.browserFetchMs !== undefined ? 'browser fetch and parsing' : 'gateway request'} ${response.browserFetchMs ?? response.gatewayTimingMs ?? response.provenance.timing.apiMs} milliseconds`} title="Last completed request; show backend details" onClick={(event) => { diagnosticsTrigger.current = event.currentTarget; setShowDiagnostics(true); }}><svg aria-hidden="true" width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="10" cy="10" r="7.5" /><path d="M10 5v5l3 2" /></svg><span>{Math.round(response.browserFetchMs ?? response.gatewayTimingMs ?? response.provenance.timing.apiMs)} ms {response.browserFetchMs !== undefined ? 'fetch' : 'server'}</span></button>}</div>
           <div className="results-actions">
             <div className="view-tabs desktop-views" role="group" aria-label="Results view"><button type="button" disabled={!ready} aria-pressed={view === 'split'} onClick={() => changeView('split')}>Split</button><button type="button" disabled={!ready} aria-pressed={view === 'map'} onClick={() => changeView('map')}>Map</button><button type="button" disabled={!ready} aria-pressed={view === 'list'} onClick={() => changeView('list')}>List</button></div>
             <label className="sort-control desktop-sort"><span className="sr-only">Sort results</span><select disabled={!ready} value={request.sort} onChange={(event) => update((current) => ({ ...current, sort: event.target.value as SearchSort }))}><option value="relevance">Sort: Relevance</option><option value="price_asc">Sort: Price ↑</option><option value="price_desc">Sort: Price ↓</option><option value="newest">Sort: Newest</option></select></label>

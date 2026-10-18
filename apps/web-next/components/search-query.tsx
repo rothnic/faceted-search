@@ -13,7 +13,7 @@ export default function SearchQuery({ request, response, settled, focused, ready
   ready: boolean;
   onOpen: () => void;
   onCancel: () => void;
-  onCommit: (query: string, place?: PlaceSuggestion) => void;
+  onCommit: (query: string, place?: PlaceSuggestion, pointerFocus?: boolean) => void;
   onDesktopChange: (query: string) => void;
 }) {
   const [draft, setDraft] = useState(request.q);
@@ -89,7 +89,7 @@ export default function SearchQuery({ request, response, settled, focused, ready
     (suggestions.facets[field] ?? []).filter((bucket) => !needle || bucket.value.toLocaleLowerCase().includes(needle)).map((bucket) => ({ field, ...bucket }))
   ).slice(0, 6) : [];
   const expanded = focused && !dismissed;
-  const commit = (place?: PlaceSuggestion) => { input.current?.blur(); onCommit(input.current?.value ?? draft, place); };
+  const commit = (place?: PlaceSuggestion, pointerFocus = false) => { input.current?.blur(); onCommit(input.current?.value ?? draft, place, pointerFocus); };
   const cancel = () => { input.current?.blur(); onCancel(); };
 
   return <div ref={entry} className="query-entry" data-focused={focused} role={focused ? 'dialog' : undefined} aria-modal={focused ? true : undefined} aria-label={focused ? 'Search homes' : undefined} onKeyDown={(event) => {
@@ -138,7 +138,7 @@ export default function SearchQuery({ request, response, settled, focused, ready
     {expanded && <section className="query-suggestions" aria-label="Place suggestions">
       {places.length > 0 && <h2>{needle ? 'Matching places' : 'Browse places'}</h2>}
       <div id={listId} role="listbox" aria-label="Places from current search results">
-        {places.map((place, index) => <button key={`${place.field}:${place.value}`} id={`${listId}-${index}`} type="button" role="option" aria-selected={active === index} tabIndex={-1} className="place-option" onMouseDown={(event) => event.preventDefault()} onClick={() => commit(place)}>
+        {places.map((place, index) => <button key={`${place.field}:${place.value}`} id={`${listId}-${index}`} type="button" role="option" aria-selected={active === index} tabIndex={-1} className="place-option" onMouseDown={(event) => event.preventDefault()} onClick={(event) => commit(place, event.detail > 0)}>
           <span>{place.value}<small>{place.field === 'city' ? 'City' : 'Neighborhood'}</small></span><span className="place-count">{place.count.toLocaleString()}</span>
         </button>)}
       </div>
