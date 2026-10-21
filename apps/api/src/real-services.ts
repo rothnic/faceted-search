@@ -435,9 +435,9 @@ export class RealServices {
     return { provider, ...await this.embeddingJobs.backfill(true), status: 'queued' };
   }
 
-  async searchExternal(provider: ExternalProvider, request: HouseSearchRequest, cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[]): Promise<ExternalSearchResult> {
-    const houses = await this.loadHouses();
-    if (provider === 'meilisearch') return this.searchMeili(request, houses, cities, neighborhoods, scopeIds);
+  async searchExternal(provider: ExternalProvider, request: HouseSearchRequest, cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[], facetWindow?: Pick<HouseSearchRequest, 'page' | 'pageSize'>): Promise<ExternalSearchResult> {
+    const houses = request.pageSize === 0 ? [] : await this.loadHouses();
+    if (provider === 'meilisearch') return this.searchMeili(request, houses, cities, neighborhoods, scopeIds, facetWindow);
     return this.searchTypesense(request, houses, cities, neighborhoods, scopeIds);
   }
 
@@ -463,7 +463,7 @@ export class RealServices {
       const { facets, queries } = await libraryFacetSearch(request, async (criteria, facetOnly) => {
         if (!facetOnly) return main = await this.searchNative(criteria, scopeIds, postgres);
         if (isPostgres) return postgres.search(criteria, scopeIds);
-        return this.searchExternal(request.provider as ExternalProvider, criteria, [], [], scopeIds);
+        return this.searchExternal(request.provider as ExternalProvider, criteria, [], [], scopeIds, request);
       });
       if (!main) throw new Error('InstantSearch did not execute the primary native request.');
       if (client) await client.query('COMMIT');
@@ -555,20 +555,27 @@ export class RealServices {
     return contentType.includes('application/json') ? response.json() : response.text();
   }
 
-  private async searchMeili(request: HouseSearchRequest, houses: House[], cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[]): Promise<ExternalSearchResult> {
+  private async searchMeili(request: HouseSearchRequest, houses: House[], cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[], facetWindow?: Pick<HouseSearchRequest, 'page' | 'pageSize'>): Promise<ExternalSearchResult> {
+    // Meili1.11's zero-limit hybrid shortcut can skip semantic evaluation.
+    // Keep the original positive finite window for this metadata-only transport;
+    // facet counts still come from its native aggregation, never returned hits.
+    const semanticFacetOnly = request.pageSize === 0 && request.mode !== 'keyword' && Boolean(request.q?.trim());
+    if (semanticFacetOnly && (!facetWindow || facetWindow.pageSize < 1)) throw new Error('Semantic facet transport requires its original native search window.');
     const rawRequest = {
       q: request.q ?? '',
       filter: this.meiliFilters(request, scopeIds),
       facets: request.includeFacets ? ['cityFacet', 'neighborhoodFacet', 'schoolDistrictFacet', 'propertyTypeFacet', 'bedrooms', 'amenities', 'listingStatusFacet'] : [],
       sort: this.meiliSort(request),
-      ...(request.pageSize === 0 ? { limit: 0 } : { page: request.page, hitsPerPage: request.pageSize }),
+      ...(semanticFacetOnly
+        ? { page: facetWindow!.page, hitsPerPage: facetWindow!.pageSize, attributesToRetrieve: [] }
+        : request.pageSize === 0 ? { limit: 0 } : { page: request.page, hitsPerPage: request.pageSize }),
       ...(request.mode !== 'keyword' && request.q?.trim() ? { hybrid: { embedder: MEILI_NATIVE_EMBEDDER, semanticRatio: request.mode === 'semantic' ? 1 : 0.45 }, showRankingScore: true, rankingScoreThreshold: 0.35 } : {})
     };
     const rawResponse = await this.meili('/indexes/houses/search', {
       method: 'POST',
       body: JSON.stringify(rawRequest)
     });
-    const hits = this.hitsFromIds(
+    const hits = request.pageSize === 0 ? [] : this.hitsFromIds(
       (rawResponse.hits ?? []).map((hit: { id: string }) => hit.id),
       houses,
       request,

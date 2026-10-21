@@ -54,6 +54,15 @@ export async function verifyDisjunctiveFacets(origin: string, pool: pg.Pool, api
         for (const bucket of result.facets[key].filter(bucket=>bucket.count===0)) assert(request.filters[key]?.map(String).includes(bucket.value), 'Only the library selected-refinement zero fallback is allowed');
       }
     }
+    for (const mode of ['semantic','hybrid'] as const) {
+      const stable = {...base, provider, mode, q:'effortless upkeep condominium beside eateries', filters:{bedrooms:[4,5]}};
+      const first = await search(origin,stable);
+      for (const window of [{page:2,pageSize:1,sort:'relevance' as const},{page:1,pageSize:18,sort:'price_desc' as const}]) {
+        const changed = await search(origin,{...stable,...window});
+        assert.equal(changed.totalHits,first.totalHits,provider+' '+mode+' total must not depend on pagination/sort');
+        for (const key of groups) assert.deepEqual(sorted(changed.facets[key]),sorted(first.facets[key]),provider+' '+mode+' native facet invariance '+key);
+      }
+    }
     const without = await search(origin,{...base,provider,filters:{bedrooms:[4]},includeFacets:false});
     assert.deepEqual(without.facets,{});
     assert.deepEqual(without.facetDefinitions,[]);

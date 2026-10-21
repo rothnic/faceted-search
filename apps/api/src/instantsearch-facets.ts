@@ -64,7 +64,7 @@ export async function libraryFacetSearch(request: HouseSearchRequest, execute: (
   });
   const { content } = await helper.searchOnce({});
   const facets = Object.fromEntries(FACET_FIELDS.map(({ key }) => {
-    const values = content.getFacetValues(key, { sortBy: ['count:desc', 'name:asc'] });
+    const values = content.getFacetValues(key, {});
     if (!Array.isArray(values)) throw new Error('Unexpected library facet response.');
     return [key, values.map(value => ({ value: value.name, count: value.count }))];
   }));
