@@ -15,11 +15,11 @@ async function search(origin: string, request: HouseSearchRequest): Promise<Hous
 }
 
 // Only called from the existing IPC-owned disposable API/appliance lifecycle.
-export async function verifyDisjunctiveFacets(origin: string, pool: pg.Pool) {
+export async function verifyDisjunctiveFacets(origin: string, pool: pg.Pool, apiOrigin: string) {
   assert.equal(process.env.TEST_DISPOSABLE_ENGINES, '1');
   const evidence = [];
   const oracle = Number((await pool.query("SELECT count(*)::int AS n FROM houses h WHERE deleted_at IS NULL AND bedrooms IN (4,5) AND EXISTS (SELECT 1 FROM house_amenities a WHERE a.house_id=h.id AND a.amenity IN ('garage','pool'))")).rows[0].n);
-  const savedResponse = await fetch(origin+'/api/saved-searches', { method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:'Facet acceptance scope',criteria:{provider:'postgres_native',mode:'keyword',q:'garage',filters:{},sort:'relevance'}}) });
+  const savedResponse = await fetch(apiOrigin+'/api/saved-searches', { method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:'Facet acceptance scope',criteria:{provider:'postgres_native',mode:'keyword',q:'garage',filters:{},sort:'relevance'}}) });
   assert.equal(savedResponse.status,201);
   const saved = await savedResponse.json();
   for (const provider of providers) {
@@ -49,7 +49,9 @@ export async function verifyDisjunctiveFacets(origin: string, pool: pg.Pool) {
       for (const key of groups) if (request.filters[key]?.length) {
         const filters = {...request.filters}; delete filters[key];
         const reference = await search(origin,{...request,filters});
-        assert.deepEqual(sorted(result.facets[key]),sorted(reference.facets[key]),provider+' self-excluding '+key+' '+JSON.stringify(context));
+        assert.deepEqual(sorted(result.facets[key].filter(bucket=>bucket.count>0)),sorted(reference.facets[key].filter(bucket=>bucket.count>0)),provider+' library-native '+key+' '+JSON.stringify(context));
+        // InstantSearch retains a selected zero-match refinement so it can be cleared.
+        for (const bucket of result.facets[key].filter(bucket=>bucket.count===0)) assert(request.filters[key]?.map(String).includes(bucket.value), 'Only the library selected-refinement zero fallback is allowed');
       }
     }
     const without = await search(origin,{...base,provider,filters:{bedrooms:[4]},includeFacets:false});

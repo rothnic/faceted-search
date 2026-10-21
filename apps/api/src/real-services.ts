@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { PostgresSearch } from './postgres-search.js';
-import { FACET_FIELDS, selectedFacetFields, withoutFacet } from './facets.js';
+import { libraryFacetSearch } from './instantsearch-facets.js';
 import { DATABASE_SCHEMA_SQL } from './schema.js';
 import { EmbeddingJobs } from './embedding-jobs.js';
 import { NativeAppliances, MEILI_NATIVE_EMBEDDER } from './appliance-vectors.js';
@@ -441,9 +441,52 @@ export class RealServices {
     return this.searchTypesense(request, houses, cities, neighborhoods, scopeIds);
   }
 
+  private async nativeSourceSnapshot() {
+    return (await this.pool.query<{ total: number; pending: number; version: string }>(`SELECT
+      (SELECT count(*)::int FROM houses WHERE deleted_at IS NULL) AS total,
+      count(*) FILTER(WHERE completed_version < desired_version)::int AS pending,
+      COALESCE(max(desired_version),0)::text AS version FROM house_embedding_work`)).rows[0];
+  }
+
   async search(request: HouseSearchRequest, scopeIds?: readonly string[]) {
+    if (!request.includeFacets) return this.searchNative(request, scopeIds);
+    const isPostgres = request.provider === 'postgres_native' || request.provider === 'pg_search';
+    const client = isPostgres ? await this.pool.connect() : undefined;
+    const postgres = client ? new PostgresSearch(client) : this.postgresSearch;
+    const before = isPostgres ? undefined : await this.nativeSourceSnapshot();
+    let main: Awaited<ReturnType<RealServices['searchNative']>> | undefined;
+    try {
+      // The library can issue several native SQL queries. One read-only MVCC
+      // snapshot keeps their hits and aggregations consistent without custom
+      // self-excluding SQL or a hand-written disjunctive query planner.
+      if (client) await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const { facets, queries } = await libraryFacetSearch(request, async (criteria, facetOnly) => {
+        if (!facetOnly) return main = await this.searchNative(criteria, scopeIds, postgres);
+        if (isPostgres) return postgres.search(criteria, scopeIds);
+        return this.searchExternal(request.provider as ExternalProvider, criteria, [], [], scopeIds);
+      });
+      if (!main) throw new Error('InstantSearch did not execute the primary native request.');
+      if (client) await client.query('COMMIT');
+      else {
+        await this.embeddingJobs.assertProjectionCurrent();
+        const after = await this.nativeSourceSnapshot();
+        if (after.pending || after.version !== before!.version || after.total !== before!.total) {
+          throw new EmbeddingUnavailableError('Source changed during native facet requests; retry after indexing settles.');
+        }
+      }
+      return { ...main, facets, debug: { ...main.debug,
+        rawRequest: { native: main.debug.rawRequest, instantSearch: queries },
+        notes: [...(main.debug.notes ?? []), 'InstantSearch search helper manages disjunctive refinement state, facet requests and result assembly. Counts are native service aggregations; no page-derived counts.']
+      } };
+    } catch (error) {
+      if (client) await client.query('ROLLBACK');
+      throw error;
+    } finally { client?.release(); }
+  }
+
+  private async searchNative(request: HouseSearchRequest, scopeIds?: readonly string[], postgres = this.postgresSearch) {
     if (request.provider === 'postgres_native' || request.provider === 'pg_search') {
-      const result = await this.postgresSearch.search(request, scopeIds);
+      const result = await postgres.search(request, scopeIds);
       return { ...result, respondingProvider: request.provider, debug: { ...result.debug, execution: request.mode === 'keyword' || !request.q?.trim() ? request.provider === 'pg_search' ? 'postgres-bm25' as const : 'postgres-fts' as const : request.mode === 'semantic' ? 'postgres-vector' as const : 'postgres-hybrid' as const } };
     }
     const provider = request.provider;
@@ -451,11 +494,7 @@ export class RealServices {
     try {
       await this.embeddingJobs.assertProjectionCurrent();
       if (await this.appliances.ensure(provider, AbortSignal.timeout(30_000))) throw new Error('Native index configuration was restored; automatic source backfill is pending.');
-      const snapshot = async () => (await this.pool.query(`SELECT
-        (SELECT count(*)::int FROM houses WHERE deleted_at IS NULL) AS total,
-        count(*) FILTER(WHERE completed_version < desired_version)::int AS pending,
-        COALESCE(max(desired_version),0)::text AS version FROM house_embedding_work`)).rows[0];
-      const before = await snapshot();
+      const before = await this.nativeSourceSnapshot();
       if (before.total > 1000) throw new Error('Complete native maps/scopes are limited to 1,000 total source documents in this demo.');
       if (before.pending) throw new Error('Source/index updates are pending. Check System and retry shortly.');
       const pageResult = await this.searchExternal(provider, request, [], [], scopeIds);
@@ -470,7 +509,7 @@ export class RealServices {
         all.push(...result.hits);
         if (!result.hits.length) break;
       }
-      const after = await snapshot();
+      const after = await this.nativeSourceSnapshot();
       if (after.pending || after.version !== before.version) throw new Error('Source data changed during native search; retry after indexing settles.');
       if (all.length !== pageResult.totalHits || new Set(all.map((hit) => hit.id)).size !== all.length) throw new Error('Native index/source result set is incomplete; run a source backfill.');
       return { respondingProvider: provider, hits: pageResult.hits, mapHits: all, totalHits: pageResult.totalHits, facets: request.includeFacets ? pageResult.facets : {}, debug: {
@@ -520,28 +559,14 @@ export class RealServices {
     const rawRequest = {
       q: request.q ?? '',
       filter: this.meiliFilters(request, scopeIds),
-      facets: request.includeFacets ? FACET_FIELDS.map(field => field.engine) : [],
+      facets: request.includeFacets ? ['cityFacet', 'neighborhoodFacet', 'schoolDistrictFacet', 'propertyTypeFacet', 'bedrooms', 'amenities', 'listingStatusFacet'] : [],
       sort: this.meiliSort(request),
-      page: request.page,
-      hitsPerPage: request.pageSize,
+      ...(request.pageSize === 0 ? { limit: 0 } : { page: request.page, hitsPerPage: request.pageSize }),
       ...(request.mode !== 'keyword' && request.q?.trim() ? { hybrid: { embedder: MEILI_NATIVE_EMBEDDER, semanticRatio: request.mode === 'semantic' ? 1 : 0.45 }, showRankingScore: true, rankingScoreThreshold: 0.35 } : {})
     };
-    const fields = selectedFacetFields(request);
-    const batch = fields.length ? { queries: [
-      { indexUid: 'houses', ...rawRequest },
-      ...fields.map(field => {
-        const { page: _page, hitsPerPage: _hits, ...query } = rawRequest;
-        return { indexUid: 'houses', ...query, filter: this.meiliFilters(withoutFacet(request, field.key), scopeIds), facets: [field.engine], limit: 0 };
-      })
-    ] } : undefined;
-    const results = batch ? (await this.meili('/multi-search', { method: 'POST', body: JSON.stringify(batch) })).results : undefined;
-    if (batch && (!Array.isArray(results) || results.length !== fields.length + 1 || results.some(result => result.error))) {
-      throw new Error('Meilisearch did not return the requested disjunctive facets.');
-    }
-    const rawResponse = results ? results[0] : await this.meili('/indexes/houses/search', { method: 'POST', body: JSON.stringify(rawRequest) });
-    const facetBuckets = this.meiliFacetDistribution(rawResponse.facetDistribution ?? {});
-    fields.forEach((field, index) => {
-      facetBuckets[field.key] = this.meiliFacetDistribution(results[index + 1].facetDistribution ?? {})[field.key];
+    const rawResponse = await this.meili('/indexes/houses/search', {
+      method: 'POST',
+      body: JSON.stringify(rawRequest)
     });
     const hits = this.hitsFromIds(
       (rawResponse.hits ?? []).map((hit: { id: string }) => hit.id),
@@ -554,10 +579,10 @@ export class RealServices {
     return {
       hits,
       totalHits: this.engineCount(rawResponse.estimatedTotalHits ?? rawResponse.totalHits),
-      facets: facetBuckets,
+      facets: this.meiliFacetDistribution(rawResponse.facetDistribution ?? {}),
       debug: {
-        rawRequest: batch ?? rawRequest,
-        rawResponse: results ?? rawResponse,
+        rawRequest,
+        rawResponse,
         warnings: []
       }
     };
@@ -568,7 +593,7 @@ export class RealServices {
       q: request.q?.trim() || '*',
       query_by: request.q?.trim() && request.mode === 'semantic' ? 'embedding' : 'title,description,semanticText,city,neighborhood,schoolDistrict,amenities,tags' + (request.q?.trim() && request.mode === 'hybrid' ? ',embedding' : ''),
       filter_by: this.typesenseFilters(request, scopeIds),
-      facet_by: request.includeFacets ? FACET_FIELDS.map(field => field.engine).join(',') : undefined,
+      facet_by: request.includeFacets ? 'cityFacet,neighborhoodFacet,schoolDistrictFacet,propertyTypeFacet,bedrooms,amenities,listingStatusFacet' : undefined,
       sort_by: this.typesenseSort(request),
       page: request.page,
       per_page: request.pageSize,
@@ -579,20 +604,7 @@ export class RealServices {
     for (const [key, value] of Object.entries(rawRequest)) {
       if (value !== undefined && value !== '') params.set(key, String(value));
     }
-    const fields = selectedFacetFields(request);
-    const batch = fields.length ? { searches: [
-      { collection: 'houses', ...rawRequest },
-      ...fields.map(field => ({ collection: 'houses', ...rawRequest, filter_by: this.typesenseFilters(withoutFacet(request, field.key), scopeIds), facet_by: field.engine, page: 1, per_page: 0 }))
-    ] } : undefined;
-    const results = batch ? (await this.typesense('/multi_search', { method: 'POST', body: JSON.stringify(batch) })).results : undefined;
-    if (batch && (!Array.isArray(results) || results.length !== fields.length + 1 || results.some(result => result.error))) {
-      throw new Error('Typesense did not return the requested disjunctive facets.');
-    }
-    const rawResponse = results ? results[0] : await this.typesense(`/collections/houses/documents/search?${params.toString()}`);
-    const facetBuckets = this.typesenseFacetCounts(rawResponse.facet_counts ?? []);
-    fields.forEach((field, index) => {
-      facetBuckets[field.key] = this.typesenseFacetCounts(results[index + 1].facet_counts ?? [])[field.key];
-    });
+    const rawResponse = await this.typesense(`/collections/houses/documents/search?${params.toString()}`);
     const hits = this.hitsFromIds(
       (rawResponse.hits ?? []).map((hit: { document: { id: string } }) => hit.document.id),
       houses,
@@ -604,10 +616,10 @@ export class RealServices {
     return {
       hits,
       totalHits: this.engineCount(rawResponse.found),
-      facets: facetBuckets,
+      facets: this.typesenseFacetCounts(rawResponse.facet_counts ?? []),
       debug: {
-        rawRequest: batch ?? rawRequest,
-        rawResponse: results ?? rawResponse,
+        rawRequest,
+        rawResponse,
         warnings: []
       }
     };
@@ -633,7 +645,7 @@ export class RealServices {
       const values = request.filters[requestField];
       if (values?.length) filters.push(`${engineField} IN [${values.map((value) => JSON.stringify(value)).join(', ')}]`);
     }
-    if (request.filters.amenities?.length) filters.push(`amenities IN [${request.filters.amenities.map(value => JSON.stringify(value)).join(',')}]`);
+    if (request.filters.amenities?.length) filters.push('amenities IN [' + request.filters.amenities.map(value => JSON.stringify(value)).join(',') + ']');
     if (request.filters.minPrice !== undefined) filters.push(`price >= ${request.filters.minPrice}`);
     if (request.filters.maxPrice !== undefined) filters.push(`price <= ${request.filters.maxPrice}`);
     if (request.filters.minBedrooms !== undefined) filters.push(`bedrooms >= ${request.filters.minBedrooms}`);
@@ -671,7 +683,7 @@ export class RealServices {
       const values = request.filters[requestField];
       if (values?.length) filters.push(`${engineField}:=[${values.map((value) => this.typesenseValue(value)).join(',')}]`);
     }
-    if (request.filters.amenities?.length) filters.push(`amenities:=[${request.filters.amenities.map(value => this.typesenseValue(value)).join(',')}]`);
+    if (request.filters.amenities?.length) filters.push('amenities:=[' + request.filters.amenities.map(value => this.typesenseValue(value)).join(',') + ']');
     if (request.filters.minPrice !== undefined) filters.push(`price:>=${request.filters.minPrice}`);
     if (request.filters.maxPrice !== undefined) filters.push(`price:<=${request.filters.maxPrice}`);
     if (request.filters.minBedrooms !== undefined) filters.push(`bedrooms:>=${request.filters.minBedrooms}`);

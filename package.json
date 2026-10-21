@@ -31,6 +31,7 @@
     "@huggingface/transformers": "3.8.1",
     "@meilisearch/instant-meilisearch": "^0.31.1",
     "@tanstack/virtual-core": "^3.17.0",
+    "algoliasearch-helper": "3.29.1",
     "instantsearch.js": "^4.101.1",
     "leaflet": "^1.9.4",
     "pg": "^8.21.0",

@@ -10,7 +10,7 @@ const label = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, cha
 const Summary = memo(function Summary({ hit }: { hit: SearchHit }) {
   return <>
     <CardHeader>
-      <div className="result-topline flex items-center justify-between gap-3"><CardTitle className="text-2xl tabular-nums">{money(hit.price)}</CardTitle><Badge variant="secondary">{label(hit.listingStatus)}</Badge></div>
+      <div className="result-topline flex items-center justify-between gap-3"><CardTitle className="text-2xl tabular-nums" data-testid="listing-price">{money(hit.price)}</CardTitle><Badge variant="secondary">{label(hit.listingStatus)}</Badge></div>
       <CardTitle role="heading" aria-level={3}>{hit.title}</CardTitle>
       <CardDescription>{hit.city}{hit.neighborhood ? ` · ${hit.neighborhood}` : ''}</CardDescription>
     </CardHeader>

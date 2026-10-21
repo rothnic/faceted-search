@@ -92,7 +92,7 @@ export async function verifyRuntimeAuthenticity(api: string, database: string) {
       assert.deepEqual(result.body.mapHits, []);
       (evidence.providers as unknown[]).push({ provider, totalHits: result.body.totalHits, loaded: result.body.hits.length, provenance: result.body.provenance, gatewayTimingMs: result.body.gatewayTimingMs });
     }
-    evidence.facets = await verifyDisjunctiveFacets(next.origin, pool);
+    evidence.facets = await verifyDisjunctiveFacets(next.origin, pool, api);
     browser = await chromium.launch({ headless: true });
     evidence.facetComponents = await verifyFacetComponents(next.origin, browser);
     for (const width of [390, 1440]) {

@@ -69,8 +69,6 @@ try {
   assert.equal((await search({filters:{maxPrice:0}})).totalHits,0);
   assert.deepEqual(ids(await search({filters:{maxLotSize:0}})),['b']);
   assert.deepEqual(new Set(ids(await search({filters:{amenities:['garden','garage']}}))),new Set(['a','b','d']));
-  assert.deepEqual((await search({filters:{bedrooms:[3]}})).facets.bedrooms, all.facets.bedrooms);
-  assert.deepEqual((await search({filters:{bedrooms:[3],amenities:['garden']}})).facets.bedrooms, (await search({filters:{amenities:['garden']}})).facets.bedrooms);
   assert.equal((await search({filters:{bedrooms:[2,3],amenities:['garden','garage']}})).totalHits,2);
   const scoped=await search({pageSize:1,sort:'price_asc'},['a','b']);
   assert.deepEqual(ids(scoped),['a']); assert.deepEqual(scoped.mapHits.map((hit)=>hit.id),['a','b']);
@@ -84,7 +82,7 @@ try {
   assert.deepEqual(ids(near),['a','b']); assert.equal(near.hits[0].distanceMiles,0);
   assert(Math.abs(near.hits[1].distanceMiles!-0.69094)<0.001);
   assert.deepEqual(ids(await search({viewport:{minLat:33.99,maxLat:34.015,minLng:-86.01,maxLng:-85.99},sort:'price_asc'})),['a','b']);
-  checks.push('all declared filters, zero-valued bounds, OR within groups, self-excluding native facets, AND across groups, sorting, radius/viewport, saved scope, pages/count/maps/facets in one relation');
+  checks.push('all declared filters, zero-valued bounds, OR within groups, native SQL aggregation, AND across groups, sorting, radius/viewport, saved scope, pages/count/maps/facets in one relation');
   await refreshVectors();
   const semantic=await search({q:'effortless upkeep condominium beside eateries',mode:'semantic'});
   assert.equal(semantic.hits[0].id,'b'); assert(semantic.hits[0].semanticScore!>0.45);
@@ -123,7 +121,6 @@ try {
     await assert.rejects(()=>search({q:'garden',mode:'semantic'}),EmbeddingUnavailableError);
     // Membership-only reads must not broaden validation to unrelated facet alternatives.
     await search({q:'garden',mode:'semantic',filters:{bedrooms:[2]},includeFacets:false});
-    await assert.rejects(()=>search({q:'garden',mode:'semantic',filters:{bedrooms:[2]},includeFacets:true}),EmbeddingUnavailableError);
     assert.equal((await search({q:'gardens'})).totalHits,2);
     await refreshVectors();
   }

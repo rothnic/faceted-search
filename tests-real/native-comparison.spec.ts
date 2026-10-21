@@ -46,7 +46,11 @@ for (const provider of providers) {
       expect(filtered.ok(), await filtered.text()).toBe(true);
       const filteredResult = await filtered.json();
       expect(filteredResult.debug.execution).toBe(execution);
-      expect(filteredResult.facets.city).toHaveLength(1);
+      // InstantSearch keeps the group's native alternatives while applying its selection to hits.
+      expect(filteredResult.facets.city).toEqual(result.facets.city);
+      const selectedCity = filtered.request().postDataJSON().filters.city[0];
+      expect(filteredResult.facets.city.find((bucket: {value: string}) => bucket.value === selectedCity).count).toBe(filteredResult.totalHits);
+      await expect(page.locator('.facet-group[data-facet=city] input[type=checkbox]')).toHaveCount(result.facets.city.length);
       expect(filteredResult.mapHits).toHaveLength(filteredResult.totalHits);
       await expect(page.locator('#result-list-scroll')).toHaveAttribute('data-total-count', String(filteredResult.totalHits));
     });
