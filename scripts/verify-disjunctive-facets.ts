@@ -85,8 +85,9 @@ export async function verifyFacetComponents(origin: string, browser: Browser) {
     await trigger.click(); await page.getByRole('menuitemradio',{name:'Keyword',exact:true}).click();
     await page.getByRole('menu').waitFor({state:'hidden'});
     await trigger.click();
-    const outside = await page.getByTestId('results-heading').boundingBox(); assert(outside);
-    if(width===390) await page.touchscreen.tap(outside.x+5,outside.y+5); else await page.mouse.click(outside.x+5,outside.y+5);
+    const menu = await page.getByRole('menu').boundingBox(); assert(menu);
+    const outside = [[8,8],[width-8,8],[8,892],[width-8,892]].find(([x,y])=>x<menu.x||x>menu.x+menu.width||y<menu.y||y>menu.y+menu.height); assert(outside);
+    if(width===390) await page.touchscreen.tap(outside[0],outside[1]); else await page.mouse.click(outside[0],outside[1]);
     await page.getByRole('menu').waitFor({state:'hidden'});
     await trigger.click(); await page.keyboard.press('Escape'); await page.getByRole('menu').waitFor({state:'hidden'});
     await trigger.click(); await page.getByRole('menuitemradio',{name:'Hybrid',exact:true}).click();
