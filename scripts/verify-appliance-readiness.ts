@@ -34,7 +34,7 @@ class Fixture {
   failTaskAfterApplyOnce = false;
   constructor(readonly provider: ApplianceProvider) {}
 
-  appliance(callbacks: Pick<ApplianceConfig, 'onRepair' | 'onReady'> = {}) {
+  appliance(callbacks: Pick<ApplianceConfig, 'onRepair' | 'onReady' | 'readOnly'> = {}) {
     globalThis.fetch = this.fetch;
     return new NativeAppliances({ meiliHost: 'http://meili.fixture', meiliKey: 'fixture-only', typesenseHost: 'http://typesense.fixture', typesenseKey: 'fixture-only', providers: [this.provider], ...callbacks });
   }
@@ -111,6 +111,24 @@ class Fixture {
 
 const checks: string[] = [];
 try {
+  for (const provider of ['meilisearch', 'typesense'] as const) {
+    const fixture = new Fixture(provider);
+    await fixture.appliance().ensure(provider, signal());
+    fixture.requests.length = 0;
+    const readOnly = fixture.appliance({ readOnly: true,
+      onRepair: async () => { assert.fail('Read-only validation cannot record repair intent'); },
+      onReady: async () => { assert.fail('Read-only validation cannot update projection readiness'); }
+    });
+    assert.equal(await readOnly.ensure(provider, signal()), false);
+    await assert.rejects(readOnly.sync(document, document.id, signal()), /Read-only search/);
+    if (provider === 'meilisearch') fixture.settings.filterableAttributes = [];
+    else fixture.fields = fixture.fields!.filter(field => field.name !== 'price');
+    await assert.rejects(readOnly.ensure(provider, signal()), /Read-only search/);
+    fixture.removeIndex();
+    await assert.rejects(readOnly.ensure(provider, signal()), /Read-only search/);
+    assert(fixture.requests.length > 0 && fixture.requests.every(request => request.method === 'GET'));
+    checks.push(`${provider}: read-only validation uses GET only, rejects drift/missing index and skips repair/readiness callbacks`);
+  }
   for (const provider of ['meilisearch', 'typesense'] as const) {
     const fixture = new Fixture(provider);
     const appliance = fixture.appliance();

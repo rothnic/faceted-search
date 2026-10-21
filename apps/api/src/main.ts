@@ -293,10 +293,14 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse) {
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string) {
   if (req.method === 'OPTIONS') return send(res, 204, {});
+  if (realServices.readOnly && req.method !== 'GET' && req.method !== 'HEAD'
+      && !(req.method === 'POST' && pathname === '/api/search')) {
+    return send(res, 403, { error: 'This search API is read-only.', code: 'READ_ONLY_RUNTIME' });
+  }
 
   if (req.method === 'GET' && pathname === '/api/providers') {
     return send(res, 200, { providers, catalog: await realServices.catalog(), catalogSource: 'postgres',
-      storageMode: 'postgres', dataset: await realServices.datasetIdentity(runtime.datasetId),
+      storageMode: 'postgres', readOnly: realServices.readOnly, dataset: await realServices.datasetIdentity(runtime.datasetId),
       observedAt: new Date().toISOString(), geoPresets: {} });
   }
 
@@ -405,7 +409,7 @@ const server = createServer(async (req, res) => {
   const address = server.address();
   const boundPort = address && typeof address === 'object' ? address.port : port;
   console.log(`Searchlab connected API running at http://${host}:${boundPort}/search`);
-  process.send?.({ type: 'ready', port: boundPort });
+  process.send?.({ type: 'ready', port: boundPort, readOnly: realServices.readOnly });
 });
 
 let shuttingDown = false;

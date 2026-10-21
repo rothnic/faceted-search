@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { verifyReadOnlyRuntime } from './verify-read-only-runtime.js';
 import { verifyDisjunctiveFacets, verifyFacetComponents } from './verify-disjunctive-facets.js';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -77,6 +78,7 @@ export async function verifyRuntimeAuthenticity(api: string, database: string) {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     assert(current, 'Source must be restored and real projections current');
+    evidence.readOnly = await verifyReadOnlyRuntime(database, pool);
     assert.equal((await fetch(api + '/api/seed', { method: 'POST' })).status, 404, 'Production has no fixture seed route');
     assert.equal((await post(api, { ...criteria, provider: 'unknown' })).status, 400);
     const next = await nextServer(api, 'ci-native'); servers.push(next);

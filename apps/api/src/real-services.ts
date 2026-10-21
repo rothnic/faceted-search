@@ -35,6 +35,7 @@ type ExternalSearchResult = {
 };
 
 export type RealServiceConfig = {
+  readOnly?: boolean;
   databaseUrl?: string;
   meiliHost: string;
   meiliKey: string;
@@ -56,6 +57,7 @@ export type SyncSummary = {
 };
 
 export class RealServices {
+  readonly readOnly: boolean;
   private pool: pg.Pool;
   private schemaReady?: Promise<void>;
   private locations = new WeakMap<House, { city: City; neighborhood?: Neighborhood }>();
@@ -65,7 +67,14 @@ export class RealServices {
 
   constructor(private config: RealServiceConfig) {
     if (!config.databaseUrl) throw new Error('DATABASE_URL is required for real service mode.');
-    this.pool = new Pool({ connectionString: config.databaseUrl, max: 6 });
+    this.readOnly = config.readOnly === true;
+    let connectionString = config.databaseUrl;
+    if (this.readOnly) {
+      const database = new URL(connectionString);
+      database.searchParams.set('options', `${database.searchParams.get('options') ?? ''} -c default_transaction_read_only=on`.trim());
+      connectionString = database.toString();
+    }
+    this.pool = new Pool({ connectionString, max: 6 });
     this.postgresSearch = new PostgresSearch(this.pool);
     const appliances = this.appliances = new NativeAppliances({ ...config, providers: config.syncProviders ?? [],
       onRepair: (provider) => this.embeddingJobs.beginProjectionRepair(provider),
@@ -137,7 +146,9 @@ export class RealServices {
 
   async start() {
     await this.ensureSchema();
-    await this.embeddingJobs.start();
+    // Disabling the worker alone still seeds/configures the queue. A read-only
+    // process must never enter that lifecycle, including its initialization.
+    if (!this.readOnly) await this.embeddingJobs.start();
   }
 
   async close() {
@@ -146,6 +157,17 @@ export class RealServices {
   }
 
   async ensureSchema() {
+    if (this.readOnly) {
+      this.schemaReady ??= this.pool.query(`SELECT current_setting('transaction_read_only') = 'on'
+        AND bool_and(to_regclass(name) IS NOT NULL) AS ready
+        FROM unnest(ARRAY['houses','cities','neighborhoods','house_amenities','house_tags',
+          'saved_searches','searchlab_dataset_identity','house_embedding_work','house_embeddings',
+          'embedding_pipeline_config','search_sync_state','pgmq.q_cpu_embeddings','pgmq.a_cpu_embeddings']) AS name`)
+        .then(({ rows }) => { if (!rows[0]?.ready) throw new Error('Read-only search requires an already provisioned database and read-only SQL sessions. No initialization was attempted.'); })
+        .catch(error => { this.schemaReady = undefined; throw error; });
+      await this.schemaReady;
+      return;
+    }
     this.schemaReady ??= this.pool.query(DATABASE_SCHEMA_SQL).then(() => undefined).catch((error) => {
       this.schemaReady = undefined;
       throw error;
@@ -781,6 +803,9 @@ export class RealServices {
 }
 
 export function realServiceConfigFromEnv(): RealServiceConfig {
+  if (process.env.SEARCH_READ_ONLY !== undefined && !['0', '1'].includes(process.env.SEARCH_READ_ONLY)) {
+    throw new Error('SEARCH_READ_ONLY must be 0 or 1.');
+  }
   const syncProviders = (process.env.SEARCH_SYNC_PROVIDERS ?? '').split(',').filter(Boolean);
   for (const provider of syncProviders) {
     if (provider !== 'meilisearch' && provider !== 'typesense') throw new Error('SEARCH_SYNC_PROVIDERS must be a comma-separated list of meilisearch,typesense.');
@@ -792,6 +817,7 @@ export function realServiceConfigFromEnv(): RealServiceConfig {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(key + ' must be an HTTP(S) origin without credentials.');
   }
   return {
+    readOnly: process.env.SEARCH_READ_ONLY === '1',
     databaseUrl: process.env.DATABASE_URL,
     meiliHost: process.env.MEILI_HOST ?? '',
     meiliKey: process.env.MEILI_MASTER_KEY ?? '',
