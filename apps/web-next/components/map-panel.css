@@ -19,5 +19,5 @@
 .expanded-map[open] .map-canvas { min-height: 0; }
 .expanded-map .leaflet-control-zoom a { width: 44px; height: 44px; line-height: 44px; }
 .expanded-map-selection { position: absolute; z-index: 500; bottom: max(16px, env(safe-area-inset-bottom)); left: 12px; right: 12px; display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: white; box-shadow: 0 4px 14px #12202e20; overflow-wrap: anywhere; pointer-events: none; }
-.expanded-map-selection small { color: var(--muted); }
+.expanded-map-selection small { color: var(--muted-foreground); }
 @media (max-width: 900px) { .map-expand { display: inline-flex; } }

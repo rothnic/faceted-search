@@ -51,27 +51,27 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
       });
       await check('03 close restores invoking card focus and feed position', async () => {
         await page.getByRole('button', { name: 'Close home details' }).click();
-        await expect(page.locator('dialog')).toHaveCount(0);
+        await expect(page.locator('.home-details')).toHaveCount(0);
         sameScroll(before, await scroll());
         await expect(page.locator('.result-select').nth(6)).toBeFocused();
         assert(!new URL(page.url()).searchParams.has('home'), 'Selected home remains in URL');
       });
       await check('04 keyboard activation, focus containment and Escape', async () => {
         await page.keyboard.press('Enter');
-        await expect(page.locator('dialog[open]')).toBeVisible();
-        for (let i = 0; i < 8; i++) { await page.keyboard.press('Tab'); assert(await page.evaluate(() => document.querySelector('dialog').contains(document.activeElement)), 'Focus escaped dialog'); }
+        await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        for (let i = 0; i < 8; i++) { await page.keyboard.press('Tab'); assert(await page.evaluate(() => document.querySelector('.home-details').contains(document.activeElement)), 'Focus escaped dialog'); }
         await page.keyboard.press('Escape');
-        await expect(page.locator('dialog')).toHaveCount(0);
+        await expect(page.locator('.home-details')).toHaveCount(0);
         sameScroll(before, await scroll());
       });
       await check('05 browser Back/Forward closes/reopens selection without another search', async () => {
         const n = requests.filter(r => !r.mapOnly).length;
         await page.locator('.result-select').nth(6).click();
-        await expect(page.locator('dialog[open]')).toBeVisible();
-        await page.goBack(); await expect(page.locator('dialog')).toHaveCount(0);
+        await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        await page.goBack(); await expect(page.locator('.home-details')).toHaveCount(0);
         sameScroll(before, await scroll());
-        await page.goForward(); await expect(page.locator('dialog[open]')).toBeVisible();
-        await page.keyboard.press('Escape'); await expect(page.locator('dialog')).toHaveCount(0);
+        await page.goForward(); await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        await page.keyboard.press('Escape'); await expect(page.locator('.home-details')).toHaveCount(0);
         assert(requests.filter(r => !r.mapOnly).length === n, 'UI history refetched or lost pages');
       });
       await check('06 pagination appends actual records exactly once', async () => {
@@ -85,19 +85,19 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
       await check('07 page-two detail and history preserve all loaded pages', async () => {
         const trigger = page.locator('.result-select').nth(29);
         await trigger.scrollIntoViewIfNeeded(); await trigger.focus(); before = await scroll();
-        await trigger.click(); await expect(page.locator('dialog[open]')).toBeVisible();
-        await page.goBack(); await expect(page.locator('dialog')).toHaveCount(0);
+        await trigger.click(); await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        await page.goBack(); await expect(page.locator('.home-details')).toHaveCount(0);
         await expect(cards).toHaveCount(35); sameScroll(before, await scroll());
-        await page.goForward(); await expect(page.locator('dialog[open]')).toBeVisible();
-        await page.getByRole('button', { name: 'Close home details' }).click(); await expect(page.locator('dialog')).toHaveCount(0);
+        await page.goForward(); await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        await page.getByRole('button', { name: 'Close home details' }).click(); await expect(page.locator('.home-details')).toHaveCount(0);
         await expect(cards).toHaveCount(35); sameScroll(before, await scroll());
       });
       await check('08 direct selected-home URL reload uses existing detail read', async () => {
         await page.locator('.result-select').nth(29).click();
-        await expect(page.locator('dialog[open]')).toBeVisible();
-        const selectedTitle = await page.locator('dialog h3').textContent();
-        await page.reload(); await expect(page.locator('dialog h3')).toHaveText(selectedTitle);
-        await page.getByRole('button', { name: 'Close home details' }).click(); await expect(page.locator('dialog')).toHaveCount(0);
+        await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        const selectedTitle = await page.locator('.home-details [role="heading"][aria-level="3"]').textContent();
+        await page.reload(); await expect(page.locator('.home-details [role="heading"][aria-level="3"]')).toHaveText(selectedTitle);
+        await page.getByRole('button', { name: 'Close home details' }).click(); await expect(page.locator('.home-details')).toHaveCount(0);
       });
       await check('09 explicit Map retains feed and List restores it', async () => {
         await expect(cards).toHaveCount(18);
@@ -116,32 +116,32 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
         await page.goBack(); await expect(page.locator('.results-workspace')).toHaveAttribute('data-view', 'list');
       });
       await check('11 mobile filter drawer close is keyboard reachable; background is inert', async () => {
-        if (width > 900) { await expect(page.getByRole('complementary', { name: 'Refine results' })).toBeVisible(); await expect(page.locator('.filter-close')).toBeHidden(); return { notApplicable: 'Desktop uses a persistent complementary filter panel; mobile drawer keyboard controls are not applicable.' }; }
+        if (width > 900) { await expect(page.getByRole('complementary', { name: 'Refine results' })).toBeVisible(); await expect(page.getByRole('button', { name: 'Close filters' })).toBeHidden(); return { notApplicable: 'Desktop uses a persistent complementary filter panel; mobile drawer keyboard controls are not applicable.' }; }
         await page.getByRole('button', { name: 'Filters (0)' }).click();
         await expect(page.getByRole('dialog', { name: 'Refine results' })).toBeVisible();
-        await expect(page.locator('.filter-close')).toBeFocused();
+        await expect(page.getByRole('button', { name: 'Close filters' })).toBeFocused();
         await page.keyboard.press('Shift+Tab');
         await page.keyboard.press('Tab');
-        await expect(page.locator('.filter-close')).toBeFocused();
-        assert(await page.locator('.results-column').evaluate(node => node.inert), 'Background not inert');
+        await expect(page.getByRole('button', { name: 'Close filters' })).toBeFocused();
+        assert(await page.locator('.results-column').evaluate(node => Boolean(node.closest('[aria-hidden="true"]'))), 'Background not inert');
         await page.keyboard.press('Enter');
         await expect(page.getByRole('button', { name: 'Filters (0)' })).toBeFocused();
         assert(await page.evaluate(() => document.body.style.overflow !== 'hidden'), 'Filter scroll lock leaked');
       });
       await check('12 applying facet and closing details retains query, chips and filters', async () => {
         if (width < 900) await page.getByRole('button', { name: 'Filters (0)' }).click();
-        const cityGroup = page.locator('.facet-group').filter({ has: page.locator('summary', { hasText: /^City$/ }) });
-        await cityGroup.locator('summary').click();
+        const cityGroup = (width < 900 ? page.getByRole('dialog', { name: 'Refine results' }) : page.locator('.desktop-filter-panel')).locator('[data-facet="city"]');
+        await cityGroup.getByRole('button', { name: 'City', exact: true }).click();
         await expect(cityGroup.getByRole('checkbox').first()).toBeVisible();
-        await cityGroup.locator('summary').click();
+        await cityGroup.getByRole('button', { name: 'City', exact: true }).click();
         await expect(cityGroup.getByRole('checkbox')).toHaveCount(0);
         await page.getByRole('checkbox', { name: /Pool/ }).check();
         if (width < 900) await page.keyboard.press('Escape');
         await expect(page.getByRole('button', { name: 'Remove Amenities: Pool' })).toBeVisible();
         await expect(page.locator('.results-workspace')).toHaveAttribute('aria-busy', 'false');
         const url = page.url();
-        await page.locator('.result-select').first().click(); await expect(page.locator('dialog[open]')).toBeVisible();
-        await page.keyboard.press('Escape'); await expect(page.locator('dialog')).toHaveCount(0);
+        await page.locator('.result-select').first().click(); await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        await page.keyboard.press('Escape'); await expect(page.locator('.home-details')).toHaveCount(0);
         assert(page.url() === url, 'Detail changed criteria URL');
         await expect(page.getByTestId('search-input')).toHaveValue('garage');
       });
@@ -179,9 +179,9 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
       });
       await check('17 detail stays usable across viewport changes', async () => {
         await page.getByRole('button',{name:'Show more homes'}).click(); await expect(cards).toHaveCount(36);
-        await page.locator('.result-select').nth(25).click(); await expect(page.locator('dialog[open]')).toBeVisible();
+        await page.locator('.result-select').nth(25).click(); await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
         for (const w of [320,768,1440,390]) { await page.setViewportSize({width:w,height:640}); await expect(page.getByRole('button',{name:'Close home details'})).toBeInViewport(); assert(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth + 1), 'Horizontal overflow'); }
-        await page.keyboard.press('Escape'); await expect(page.locator('dialog')).toHaveCount(0);
+        await page.keyboard.press('Escape'); await expect(page.locator('.home-details')).toHaveCount(0);
         assert(await page.evaluate(()=>document.body.style.overflow !== 'hidden'), 'Detail scroll lock leaked');
         await expect(page.locator('.result-select').nth(25)).toBeFocused();
         await expect(page.locator('.result-select').nth(25)).toBeInViewport();
@@ -190,9 +190,9 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
           const trigger=page.locator('.result-select').nth(25);
           await trigger.scrollIntoViewIfNeeded(); await trigger.focus();
           const n=requests.filter(r=>!r.mapOnly).length;
-          await trigger.click(); await expect(page.locator('dialog[open]')).toBeVisible();
+          await trigger.click(); await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
           await page.setViewportSize({width:end,height:844});
-          await page.locator('dialog').getByRole('button',{name:'Show on map',exact:true}).click();
+          await page.locator('.home-details').getByRole('button',{name:'Show on map',exact:true}).click();
           await expect(page.locator('.map-column')).toBeFocused();
           await page.goBack(); await expect(page.locator('.results-workspace')).toHaveAttribute('data-view','list');
           await expect(trigger).toBeFocused(); await expect(trigger).toBeInViewport();
@@ -229,8 +229,8 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
       });
       await check('21 missing detail has honest recovery', async () => {
         await page.goto(origin + '/search?home=not-a-real-home');
-        await expect(page.locator('dialog [role=alert]')).toContainText('no longer available');
-        await page.getByRole('button',{name:'Close home details'}).click(); await expect(page.locator('dialog')).toHaveCount(0);
+        await expect(page.locator('.home-details [role=alert]')).toContainText('no longer available');
+        await page.getByRole('button',{name:'Close home details'}).click(); await expect(page.locator('.home-details')).toHaveCount(0);
         await expect(cards).toHaveCount(18);
         await expect(page.getByTestId('results-heading')).toBeFocused();
       });
@@ -244,23 +244,23 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
         await expect(page.getByTestId('results-count')).toHaveText('35 matches');
         await page.getByRole('button',{name:'Show more homes'}).click(); await expect(cards).toHaveCount(35);
         const count=requests.filter(r=>!r.mapOnly).length;
-        await page.locator('.result-select').nth(29).click(); await expect(page.locator('dialog[open]')).toBeVisible();
-        await page.goBack(); await expect(page.locator('dialog')).toHaveCount(0); await expect(cards).toHaveCount(35);
+        await page.locator('.result-select').nth(29).click(); await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        await page.goBack(); await expect(page.locator('.home-details')).toHaveCount(0); await expect(cards).toHaveCount(35);
         assert(requests.filter(r=>!r.mapOnly).length===count,'Equivalent criteria reordered and refetched');
       });
       await check('24 restored Split and direct mobile detail preserve navigation ownership', async () => {
         await page.setViewportSize({width:1440,height:844});
         await page.locator('.desktop-views').getByRole('button',{name:'Split',exact:true}).click();
         const id=await cards.first().getAttribute('data-house-id');
-        await page.locator('.result-select').first().click(); await expect(page.locator('dialog[open]')).toBeVisible();
-        await page.setViewportSize({width:390,height:844}); await page.keyboard.press('Escape'); await expect(page.locator('dialog')).toHaveCount(0);
+        await page.locator('.result-select').first().click(); await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        await page.setViewportSize({width:390,height:844}); await page.keyboard.press('Escape'); await expect(page.locator('.home-details')).toHaveCount(0);
         await expect(page.locator('.mobile-views').getByRole('button',{name:'List',exact:true})).toHaveAttribute('aria-pressed','true');
-        await page.locator('.result-select').first().click(); await expect(page.locator('dialog[open]')).toBeVisible();
-        await page.locator('dialog').getByRole('button',{name:'Show on map',exact:true}).click();
+        await page.locator('.result-select').first().click(); await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
+        await page.locator('.home-details').getByRole('button',{name:'Show on map',exact:true}).click();
         await expect(page.locator('.map-column')).toBeFocused();
         await page.goBack(); await expect(page.locator('.results-workspace')).toHaveAttribute('data-view','list');
-        await page.goto(origin+'/search?view=split&home='+id); await expect(page.locator('dialog h3')).toBeVisible();
-        await page.getByRole('button',{name:'Close home details'}).click(); await expect(page.locator('dialog')).toHaveCount(0);
+        await page.goto(origin+'/search?view=split&home='+id); await expect(page.locator('.home-details [role="heading"][aria-level="3"]')).toBeVisible();
+        await page.getByRole('button',{name:'Close home details'}).click(); await expect(page.locator('.home-details')).toHaveCount(0);
         assert(!new URL(page.url()).searchParams.has('minPrice'),'Direct detail close navigated to previous criteria');
         await expect(page.locator('.mobile-views').getByRole('button',{name:'List',exact:true})).toHaveAttribute('aria-pressed','true');
         await expect(cards).toHaveCount(18);

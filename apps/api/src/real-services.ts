@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { PostgresSearch } from './postgres-search.js';
+import { FACET_FIELDS, selectedFacetFields, withoutFacet } from './facets.js';
 import { DATABASE_SCHEMA_SQL } from './schema.js';
 import { EmbeddingJobs } from './embedding-jobs.js';
 import { NativeAppliances, MEILI_NATIVE_EMBEDDER } from './appliance-vectors.js';
@@ -463,7 +464,7 @@ export class RealServices {
       const requests: unknown[] = [pageResult.debug.rawRequest];
       const responses: unknown[] = [pageResult.debug.rawResponse];
       for (let page = 1; all.length < pageResult.totalHits && page <= 4; page++) {
-        const result = await this.searchExternal(provider, { ...request, page, pageSize: 250 }, [], [], scopeIds);
+        const result = await this.searchExternal(provider, { ...request, page, pageSize: 250, includeFacets: false }, [], [], scopeIds);
         if (result.totalHits !== pageResult.totalHits) throw new Error('Native result set changed during map retrieval; retry.');
         requests.push(result.debug.rawRequest); responses.push(result.debug.rawResponse);
         all.push(...result.hits);
@@ -519,15 +520,28 @@ export class RealServices {
     const rawRequest = {
       q: request.q ?? '',
       filter: this.meiliFilters(request, scopeIds),
-      facets: ['cityFacet', 'neighborhoodFacet', 'schoolDistrictFacet', 'propertyTypeFacet', 'bedrooms', 'amenities', 'listingStatusFacet'],
+      facets: request.includeFacets ? FACET_FIELDS.map(field => field.engine) : [],
       sort: this.meiliSort(request),
       page: request.page,
       hitsPerPage: request.pageSize,
       ...(request.mode !== 'keyword' && request.q?.trim() ? { hybrid: { embedder: MEILI_NATIVE_EMBEDDER, semanticRatio: request.mode === 'semantic' ? 1 : 0.45 }, showRankingScore: true, rankingScoreThreshold: 0.35 } : {})
     };
-    const rawResponse = await this.meili('/indexes/houses/search', {
-      method: 'POST',
-      body: JSON.stringify(rawRequest)
+    const fields = selectedFacetFields(request);
+    const batch = fields.length ? { queries: [
+      { indexUid: 'houses', ...rawRequest },
+      ...fields.map(field => {
+        const { page: _page, hitsPerPage: _hits, ...query } = rawRequest;
+        return { indexUid: 'houses', ...query, filter: this.meiliFilters(withoutFacet(request, field.key), scopeIds), facets: [field.engine], limit: 0 };
+      })
+    ] } : undefined;
+    const results = batch ? (await this.meili('/multi-search', { method: 'POST', body: JSON.stringify(batch) })).results : undefined;
+    if (batch && (!Array.isArray(results) || results.length !== fields.length + 1 || results.some(result => result.error))) {
+      throw new Error('Meilisearch did not return the requested disjunctive facets.');
+    }
+    const rawResponse = results ? results[0] : await this.meili('/indexes/houses/search', { method: 'POST', body: JSON.stringify(rawRequest) });
+    const facetBuckets = this.meiliFacetDistribution(rawResponse.facetDistribution ?? {});
+    fields.forEach((field, index) => {
+      facetBuckets[field.key] = this.meiliFacetDistribution(results[index + 1].facetDistribution ?? {})[field.key];
     });
     const hits = this.hitsFromIds(
       (rawResponse.hits ?? []).map((hit: { id: string }) => hit.id),
@@ -540,10 +554,10 @@ export class RealServices {
     return {
       hits,
       totalHits: this.engineCount(rawResponse.estimatedTotalHits ?? rawResponse.totalHits),
-      facets: this.meiliFacetDistribution(rawResponse.facetDistribution ?? {}),
+      facets: facetBuckets,
       debug: {
-        rawRequest,
-        rawResponse,
+        rawRequest: batch ?? rawRequest,
+        rawResponse: results ?? rawResponse,
         warnings: []
       }
     };
@@ -554,7 +568,7 @@ export class RealServices {
       q: request.q?.trim() || '*',
       query_by: request.q?.trim() && request.mode === 'semantic' ? 'embedding' : 'title,description,semanticText,city,neighborhood,schoolDistrict,amenities,tags' + (request.q?.trim() && request.mode === 'hybrid' ? ',embedding' : ''),
       filter_by: this.typesenseFilters(request, scopeIds),
-      facet_by: 'cityFacet,neighborhoodFacet,schoolDistrictFacet,propertyTypeFacet,bedrooms,amenities,listingStatusFacet',
+      facet_by: request.includeFacets ? FACET_FIELDS.map(field => field.engine).join(',') : undefined,
       sort_by: this.typesenseSort(request),
       page: request.page,
       per_page: request.pageSize,
@@ -565,7 +579,20 @@ export class RealServices {
     for (const [key, value] of Object.entries(rawRequest)) {
       if (value !== undefined && value !== '') params.set(key, String(value));
     }
-    const rawResponse = await this.typesense(`/collections/houses/documents/search?${params.toString()}`);
+    const fields = selectedFacetFields(request);
+    const batch = fields.length ? { searches: [
+      { collection: 'houses', ...rawRequest },
+      ...fields.map(field => ({ collection: 'houses', ...rawRequest, filter_by: this.typesenseFilters(withoutFacet(request, field.key), scopeIds), facet_by: field.engine, page: 1, per_page: 0 }))
+    ] } : undefined;
+    const results = batch ? (await this.typesense('/multi_search', { method: 'POST', body: JSON.stringify(batch) })).results : undefined;
+    if (batch && (!Array.isArray(results) || results.length !== fields.length + 1 || results.some(result => result.error))) {
+      throw new Error('Typesense did not return the requested disjunctive facets.');
+    }
+    const rawResponse = results ? results[0] : await this.typesense(`/collections/houses/documents/search?${params.toString()}`);
+    const facetBuckets = this.typesenseFacetCounts(rawResponse.facet_counts ?? []);
+    fields.forEach((field, index) => {
+      facetBuckets[field.key] = this.typesenseFacetCounts(results[index + 1].facet_counts ?? [])[field.key];
+    });
     const hits = this.hitsFromIds(
       (rawResponse.hits ?? []).map((hit: { document: { id: string } }) => hit.document.id),
       houses,
@@ -577,10 +604,10 @@ export class RealServices {
     return {
       hits,
       totalHits: this.engineCount(rawResponse.found),
-      facets: this.typesenseFacetCounts(rawResponse.facet_counts ?? []),
+      facets: facetBuckets,
       debug: {
-        rawRequest,
-        rawResponse,
+        rawRequest: batch ?? rawRequest,
+        rawResponse: results ?? rawResponse,
         warnings: []
       }
     };
@@ -606,7 +633,7 @@ export class RealServices {
       const values = request.filters[requestField];
       if (values?.length) filters.push(`${engineField} IN [${values.map((value) => JSON.stringify(value)).join(', ')}]`);
     }
-    for (const amenity of request.filters.amenities ?? []) filters.push(`amenities = ${JSON.stringify(amenity)}`);
+    if (request.filters.amenities?.length) filters.push(`amenities IN [${request.filters.amenities.map(value => JSON.stringify(value)).join(',')}]`);
     if (request.filters.minPrice !== undefined) filters.push(`price >= ${request.filters.minPrice}`);
     if (request.filters.maxPrice !== undefined) filters.push(`price <= ${request.filters.maxPrice}`);
     if (request.filters.minBedrooms !== undefined) filters.push(`bedrooms >= ${request.filters.minBedrooms}`);
@@ -644,7 +671,7 @@ export class RealServices {
       const values = request.filters[requestField];
       if (values?.length) filters.push(`${engineField}:=[${values.map((value) => this.typesenseValue(value)).join(',')}]`);
     }
-    for (const amenity of request.filters.amenities ?? []) filters.push(`amenities:=${this.typesenseValue(amenity)}`);
+    if (request.filters.amenities?.length) filters.push(`amenities:=[${request.filters.amenities.map(value => this.typesenseValue(value)).join(',')}]`);
     if (request.filters.minPrice !== undefined) filters.push(`price:>=${request.filters.minPrice}`);
     if (request.filters.maxPrice !== undefined) filters.push(`price:<=${request.filters.maxPrice}`);
     if (request.filters.minBedrooms !== undefined) filters.push(`bedrooms:>=${request.filters.minBedrooms}`);

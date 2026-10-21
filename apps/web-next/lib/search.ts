@@ -62,6 +62,7 @@ export type SearchResponse = {
   page: number;
   pageSize: number;
   facets: Record<string, Array<{ value: string; count: number }>>;
+  facetDefinitions?: Array<{ key: string; label: string; valueType: 'string' | 'number' }>;
   processingTimeMs: number;
   debug?: { warnings?: string[] };
 };

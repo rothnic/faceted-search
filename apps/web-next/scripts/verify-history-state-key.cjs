@@ -21,9 +21,9 @@ const must = (value, message) => { if (!value) throw new Error(message); };
         await page.goto(origin + '/search?q=garage');
         await page.locator('.request-timing:enabled').waitFor();
         await page.locator('.result-select').nth(6).click();
-        await expect(page.locator('.home-details[open]')).toBeVisible();
+        await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
         await page.reload();
-        await expect(page.locator('.home-details[open]')).toBeVisible();
+        await expect(page.locator('.home-details[data-state="open"]')).toBeVisible();
         await page.locator('.request-timing:enabled').waitFor();
         await page.evaluate(() => {
           window.__historyKeyProof = {

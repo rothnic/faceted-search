@@ -94,7 +94,7 @@ const submit = async (page, width, q) => {
           if (width < 901) { await page.getByRole('button', { name: 'Expand map', exact: true }).click(); scope = page.getByRole('dialog', { name: 'Expanded map', exact: true }); }
           await expect(scope.locator('.map-feedback')).toContainText('previous');
           await expect(scope.getByRole('button', { name: 'Retry map', exact: true })).toBeVisible();
-          const currentTitles = await page.locator('.result-card h3').allTextContents();
+          const currentTitles = await page.locator('.result-card [role="heading"][aria-level="3"]').allTextContents();
           const available = scope.locator('.leaflet-interactive');
           const labels = await available.evaluateAll(ns => ns.map(n => n.getAttribute('aria-label')));
           const label = labels.find(v => currentTitles.some(t => v.startsWith('Select home: ' + t + ',')));
@@ -120,7 +120,7 @@ const submit = async (page, width, q) => {
           await page.locator('.result-card').filter({ has: page.getByRole('heading', { name: title, exact: true }) }).locator('.result-select').click();
           await expect(page.getByRole('dialog', { name: 'Home details', exact: true })).toBeVisible();
           await page.getByRole('button', { name: 'Close home details', exact: true }).click();
-          await expect(page.locator('.home-details[open]')).toHaveCount(0);
+          await expect(page.locator('.home-details[data-state="open"]')).toHaveCount(0);
           await expect(page.getByTestId('results-count')).toHaveText('31 matches');
           must(new URL(page.url()).searchParams.get('minPrice') === '0' && new URL(page.url()).searchParams.get('q') === 'pool', 'Recovery/details changed criteria');
           await viewButton(page, width, 'Map').click();

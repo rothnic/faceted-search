@@ -96,6 +96,7 @@ export type HouseSearchResponse = {
   page: number;
   pageSize: number;
   facets: Record<string, FacetBucket[]>;
+  facetDefinitions?: Array<{ key: string; label: string; valueType: 'string' | 'number' }>;
   processingTimeMs: number;
   debug?: {
     execution?: 'external-keyword' | 'postgres-vector' | 'postgres-fts' | 'postgres-bm25' | 'postgres-hybrid' | 'external-semantic' | 'external-hybrid';

@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { FACET_FIELDS } from './facets.js';
 import type { FacetBucket, HouseSearchHit, HouseSearchMapHit, HouseSearchRequest } from '../../../packages/search-contracts/src/search-provider.interface.js';
 import { embedTexts, EMBEDDING_MODEL_KEY, EmbeddingUnavailableError, MIN_SEMANTIC_SIMILARITY } from './embeddings.js';
 
@@ -118,8 +119,8 @@ type SearchRow = {
 };
 
 /** Executes filtering, ranking, pagination, geo and facet aggregation in SQL.
- * All response sections read one MATERIALIZED matching relation in one MVCC
- * snapshot. scopeIds is already evaluated saved-search membership, not a page. */
+ * Hits and self-excluding facets read one MATERIALIZED candidate relation in
+ * one MVCC snapshot. scopeIds is already evaluated saved-search membership, not a page. */
 export class PostgresSearch {
   constructor(private readonly pool: pg.Pool) {}
 
@@ -143,14 +144,11 @@ export class PostgresSearch {
     const f = request.filters ?? {};
     const predicates = ['h.deleted_at IS NULL'];
     if (scopeIds !== undefined) predicates.push(`h.id = ANY(${param([...scopeIds], '::text[]')})`);
-    const facets: Array<[keyof typeof f, string, string]> = [
-      ['city', 'c.name', 'text'], ['neighborhood', 'n.name', 'text'],
-      ['schoolDistrict', 'h.school_district', 'text'], ['propertyType', 'h.property_type', 'text'],
-      ['listingStatus', 'h.listing_status', 'text'], ['bedrooms', 'h.bedrooms', 'integer']
-    ];
-    for (const [field, column, type] of facets) {
-      const values = f[field];
-      if (Array.isArray(values) && values.length) predicates.push(`${column} = ANY(${param(values, `::${type}[]`)})`);
+    const selectedFacets = new Map<string, string>();
+    for (const { key, sql: column, type } of FACET_FIELDS) {
+      if (key === 'amenities') continue;
+      const values = f[key];
+      if (values?.length) selectedFacets.set(key, `${column} = ANY(${param(values, `::${type}[]`)})`);
     }
     const ranges: Array<[keyof typeof f, string, string]> = [
       ['minPrice', 'h.price', '>='], ['maxPrice', 'h.price', '<='], ['minBedrooms', 'h.bedrooms', '>='],
@@ -166,9 +164,17 @@ export class PostgresSearch {
       }
     }
     if (f.amenities?.length) {
-      predicates.push(`NOT EXISTS (SELECT 1 FROM unnest(${param(f.amenities, '::text[]')}) wanted(amenity)
-        WHERE NOT EXISTS (SELECT 1 FROM house_amenities selected WHERE selected.house_id=h.id AND selected.amenity=wanted.amenity))`);
+      selectedFacets.set('amenities', `EXISTS (SELECT 1 FROM house_amenities selected
+        WHERE selected.house_id=h.id AND selected.amenity = ANY(${param(f.amenities, '::text[]')}))`);
     }
+    const sourceFilters = (except?: string) => [...selectedFacets].filter(([key]) => key !== except).map(([, sql]) => `(${sql})`).join(' AND ') || 'true';
+    const rowFilters = (except?: string) => [...selectedFacets.keys()].filter(key => key !== except).map(key => `m.matches_${key}`).join(' AND ') || 'true';
+    // Native aggregation retains every other group while excluding this group's
+    // own selection. Counts never come from the returned page or JS filtering.
+    predicates.push(request.includeFacets
+      ? '(' + FACET_FIELDS.map(({ key }) => '(' + sourceFilters(key) + ')').join(' OR ') + ')'
+      : sourceFilters());
+    const selectionColumns = [...selectedFacets].map(([key, sql]) => `(${sql}) AS matches_${key}`);
     if (request.viewport) {
       const v = request.viewport;
       if (![v.minLat, v.maxLat, v.minLng, v.maxLng].every(Number.isFinite)) throw new Error('Invalid viewport.');
@@ -205,11 +211,15 @@ export class PostgresSearch {
       ? `similarity >= ${MIN_SEMANTIC_SIMILARITY}` : `(keyword_match OR similarity >= ${MIN_SEMANTIC_SIMILARITY})`;
     const facetSql = request.includeFacets ? `
       facet_values AS (
-        SELECT kv.field, kv.value FROM matching m CROSS JOIN LATERAL (VALUES
-          ('city', m.city), ('neighborhood', m.neighborhood), ('schoolDistrict', m.school_district),
-          ('propertyType', m.property_type), ('listingStatus', m.listing_status), ('bedrooms', m.bedrooms::text)
-        ) kv(field,value) WHERE kv.value IS NOT NULL
-        UNION ALL SELECT 'amenities', amenity FROM matching m JOIN house_amenities ha ON ha.house_id=m.id
+        SELECT kv.field, kv.value FROM searchable m CROSS JOIN LATERAL (VALUES
+          ('city', m.city, ${rowFilters('city')}), ('neighborhood', m.neighborhood, ${rowFilters('neighborhood')}),
+          ('schoolDistrict', m.school_district, ${rowFilters('schoolDistrict')}),
+          ('propertyType', m.property_type, ${rowFilters('propertyType')}),
+          ('listingStatus', m.listing_status, ${rowFilters('listingStatus')}),
+          ('bedrooms', m.bedrooms::text, ${rowFilters('bedrooms')})
+        ) kv(field,value,eligible) WHERE kv.eligible AND kv.value IS NOT NULL
+        UNION ALL SELECT 'amenities', amenity FROM searchable m JOIN house_amenities ha ON ha.house_id=m.id
+          WHERE ${rowFilters('amenities')}
       ),
       facet_counts AS (SELECT field,value,count(*)::integer AS count FROM facet_values GROUP BY field,value),
       facet_ranks AS (SELECT *, row_number() OVER(PARTITION BY field ORDER BY count DESC,value COLLATE "C") AS position FROM facet_counts),
@@ -228,6 +238,7 @@ export class PostgresSearch {
           COALESCE((SELECT jsonb_agg(amenity ORDER BY amenity) FROM house_amenities WHERE house_id=h.id),'[]'::jsonb) AS amenities,
           COALESCE((SELECT jsonb_agg(tag ORDER BY tag) FROM house_tags WHERE house_id=h.id),'[]'::jsonb) AS tags,
           c.name AS city,n.name AS neighborhood,${distance} AS distance_miles,
+          ${selectionColumns.length ? selectionColumns.join(',') + ',' : ''}
           ${q ? bm25 ? 'lex.house_id IS NOT NULL' : 's.search_vector @@ query_input.terms' : 'false'} AS keyword_match,
           ${q ? bm25 ? 'COALESCE(lex.raw_score / (1 + lex.raw_score), 0)' : 'ts_rank(s.search_vector, query_input.terms, 32)' : '0::float4'} AS keyword_score,
           ${current} AS embedding_current,${similarity} AS similarity
@@ -239,9 +250,10 @@ export class PostgresSearch {
         CROSS JOIN query_input WHERE ${predicates.join('\n          AND ')}
       ),
       invalid AS (SELECT count(*)::integer AS count FROM candidates WHERE embedding_current IS NOT TRUE OR ${semantic ? "similarity IS NULL OR similarity::text IN ('NaN','Infinity','-Infinity')" : 'false'}),
-      matching AS MATERIALIZED (
+      searchable AS MATERIALIZED (
         SELECT *,${score} AS score FROM candidates WHERE (${match}) AND (SELECT count FROM invalid)=0
       ),
+      matching AS MATERIALIZED (SELECT * FROM searchable m WHERE ${rowFilters()}),
       ordered AS (SELECT *,row_number() OVER(ORDER BY ${order}) AS position FROM matching),
       paginated AS (SELECT * FROM ordered ORDER BY position LIMIT ${limit} OFFSET ${offset}),
       ${facetSql}

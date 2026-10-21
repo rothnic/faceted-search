@@ -1,7 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import './details-dialog.css';
+import { X } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type { SearchHit } from '@/lib/search';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format;
@@ -14,7 +18,7 @@ export default function DetailsDialog({ hit: loadedHit, id, onClose, onMap, retu
   onMap: () => void;
   returnFocus: HTMLElement | null;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const position = useRef<{ y: number; listY: number; width: number; height: number } | null>(null);
   const [fetchedHit, setFetchedHit] = useState<SearchHit | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -34,49 +38,38 @@ export default function DetailsDialog({ hit: loadedHit, id, onClose, onMap, retu
     return () => controller.abort();
   }, [id, loadedHit, retry]);
   useEffect(() => {
-    const element = dialog.current!;
-    const y = window.scrollY;
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
-    const list = document.querySelector('.result-list');
-    const listY = list?.scrollTop ?? 0;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    element.showModal();
-    return () => {
-      element.close();
-      document.body.style.overflow = previousOverflow;
-      const target = returnFocus?.isConnected ? returnFocus : document.querySelector<HTMLElement>('[data-testid=results-heading]');
-      const map = document.querySelector<HTMLElement>('.results-workspace[data-view="map"] .map-column');
-      if (map) { map.focus({ preventScroll: true }); return; }
-      target?.focus({ preventScroll: true });
-      if (viewport.width !== window.innerWidth || viewport.height !== window.innerHeight) {
-        // Re-anchor the same card when the feed changes between page and nested scrolling.
-        target?.scrollIntoView({ block: 'center', inline: 'nearest' });
-      } else {
-        list?.scrollTo(0, listY);
-        window.scrollTo(0, y);
-      }
-    };
-  }, [returnFocus]);
+    position.current = { y: window.scrollY, listY: document.querySelector('.result-list')?.scrollTop ?? 0, width: innerWidth, height: innerHeight };
+  }, []);
+  const restoreFocus = () => {
+    const target = returnFocus?.isConnected ? returnFocus : document.querySelector<HTMLElement>('[data-testid=results-heading]');
+    const map = document.querySelector<HTMLElement>('.results-workspace[data-view="map"] .map-column');
+    if (map) { map.focus({ preventScroll: true }); return; }
+    target?.focus({ preventScroll: true });
+    const saved = position.current;
+    if (!saved) return;
+    if (saved.width !== innerWidth || saved.height !== innerHeight) target?.scrollIntoView({ block: 'center', inline: 'nearest' });
+    else { document.querySelector('.result-list')?.scrollTo(0, saved.listY); window.scrollTo(0, saved.y); }
+  };
 
-  return <dialog ref={dialog} className="home-details" aria-labelledby="home-details-title" onKeyDown={(event) => {
-    if (event.key !== 'Tab') return;
-    const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]')].filter((element) => element.getClientRects().length > 0);
-    const first = controls[0], last = controls.at(-1);
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-  }} onCancel={(event) => { event.preventDefault(); onClose(); }}>
-    <header className="detail-header"><h2 id="home-details-title">Home details</h2><button type="button" autoFocus className="detail-close" onClick={onClose} aria-label="Close home details"><span aria-hidden="true">×</span></button></header>
-    <div className="detail-content">
-      {hit ? <>
-        <p className="detail-price">{money(hit.price)} <span className="status-badge">{label(hit.listingStatus)}</span></p>
-        <h3>{hit.title}</h3>
-        <p className="detail-location">{hit.city}{hit.neighborhood ? ` · ${hit.neighborhood}` : ''}</p>
-        <dl className="detail-facts"><div><dt>Bedrooms</dt><dd>{hit.bedrooms}</dd></div><div><dt>Bathrooms</dt><dd>{hit.bathrooms}</dd></div><div><dt>Living area</dt><dd>{hit.squareFeet.toLocaleString()} sqft</dd></div><div><dt>Home type</dt><dd>{label(hit.propertyType)}</dd></div></dl>
-        <h4>About this home</h4><p className="detail-description">{hit.description}</p>
-        {hit.amenities.length > 0 && <><h4>Features</h4><ul className="detail-features">{hit.amenities.map((amenity) => <li key={amenity}>{label(amenity)}</li>)}</ul></>}
-        <button type="button" className="detail-map" onClick={onMap}>Show on map</button>
-      </> : <div role={error ? 'alert' : 'status'}><p>{error ?? 'Loading home…'}</p>{error && <button type="button" className="detail-map" onClick={() => setRetry((value) => value + 1)}>Retry details</button>}</div>}
-    </div>
-  </dialog>;
+  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+    <DialogContent className="home-details max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl" showCloseButton={false} onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }}>
+      <DialogHeader className="flex flex-row items-center justify-between text-left">
+        <div className="space-y-2"><DialogTitle>Home details</DialogTitle><DialogDescription>Listing information from the search service.</DialogDescription></div>
+        <Button variant="ghost" size="icon" type="button" className="min-h-11 min-w-11" onClick={onClose} aria-label="Close home details"><X aria-hidden="true" /></Button>
+      </DialogHeader>
+      {hit ? <Card className="gap-4 border-0 py-0 shadow-none">
+        <CardHeader className="px-0">
+          <div className="flex items-center justify-between gap-2"><CardTitle className="text-2xl">{money(hit.price)}</CardTitle><Badge variant="secondary">{label(hit.listingStatus)}</Badge></div>
+          <CardTitle role="heading" aria-level={3}>{hit.title}</CardTitle>
+          <CardDescription>{hit.city}{hit.neighborhood ? ` · ${hit.neighborhood}` : ''}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5 px-0">
+          <dl className="grid grid-cols-2 gap-4 text-sm">{[['Bedrooms', hit.bedrooms], ['Bathrooms', hit.bathrooms], ['Living area', `${hit.squareFeet.toLocaleString()} sqft`], ['Home type', label(hit.propertyType)]].map(([key, value]) => <div key={key}><dt className="text-muted-foreground">{key}</dt><dd className="mt-1 font-medium">{value}</dd></div>)}</dl>
+          <section className="space-y-2"><CardTitle role="heading" aria-level={4}>About this home</CardTitle><CardDescription className="leading-relaxed">{hit.description}</CardDescription></section>
+          {hit.amenities.length > 0 && <section className="space-y-2"><CardTitle role="heading" aria-level={4}>Features</CardTitle><ul className="flex flex-wrap gap-2">{hit.amenities.map(amenity => <li key={amenity}><Badge variant="secondary">{label(amenity)}</Badge></li>)}</ul></section>}
+        </CardContent>
+        <CardFooter className="px-0"><Button type="button" onClick={onMap}>Show on map</Button></CardFooter>
+      </Card> : <div role={error ? 'alert' : 'status'} className="space-y-3"><p>{error ?? 'Loading home…'}</p>{error && <Button variant="outline" type="button" onClick={() => setRetry(value => value + 1)}>Retry details</Button>}</div>}
+    </DialogContent>
+  </Dialog>;
 }

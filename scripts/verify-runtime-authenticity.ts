@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { verifyDisjunctiveFacets, verifyFacetComponents } from './verify-disjunctive-facets.js';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
@@ -91,7 +92,9 @@ export async function verifyRuntimeAuthenticity(api: string, database: string) {
       assert.deepEqual(result.body.mapHits, []);
       (evidence.providers as unknown[]).push({ provider, totalHits: result.body.totalHits, loaded: result.body.hits.length, provenance: result.body.provenance, gatewayTimingMs: result.body.gatewayTimingMs });
     }
+    evidence.facets = await verifyDisjunctiveFacets(next.origin, pool);
     browser = await chromium.launch({ headless: true });
+    evidence.facetComponents = await verifyFacetComponents(next.origin, browser);
     for (const width of [390, 1440]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       await page.goto(next.origin + '/search?q=garage');
