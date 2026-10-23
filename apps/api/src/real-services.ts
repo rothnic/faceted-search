@@ -282,8 +282,9 @@ export class RealServices {
     }
   }
 
-  async loadHouses(id?: string, queryable: pg.Pool | pg.PoolClient = this.pool): Promise<House[]> {
+  async loadHouses(idOrIds?: string | readonly string[], queryable: pg.Pool | pg.PoolClient = this.pool): Promise<House[]> {
     await this.ensureSchema();
+    const ids = typeof idOrIds === 'string' ? [idOrIds] : idOrIds ? [...idOrIds] : null;
     const { rows } = await queryable.query(`
       SELECT
         h.*, row_to_json(c) AS city_record, row_to_json(n) AS neighborhood_record,
@@ -294,10 +295,10 @@ export class RealServices {
       LEFT JOIN neighborhoods n ON n.id = h.neighborhood_id
       LEFT JOIN house_amenities ha ON ha.house_id = h.id
       LEFT JOIN house_tags ht ON ht.house_id = h.id
-      WHERE ($1::text IS NULL OR h.id = $1)
+      ${ids ? 'WHERE h.id = ANY($1::text[])' : ''}
       GROUP BY h.id, c.id, n.id
       ORDER BY h.id
-    `, [id ?? null]);
+    `, ids ? [ids] : []);
     return rows.map((row) => {
       const house: House = {
       id: row.id,
@@ -458,9 +459,9 @@ export class RealServices {
   }
 
   async searchExternal(provider: ExternalProvider, request: HouseSearchRequest, cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[], facetWindow?: Pick<HouseSearchRequest, 'page' | 'pageSize'>): Promise<ExternalSearchResult> {
-    const houses = request.pageSize === 0 ? [] : await this.loadHouses();
-    if (provider === 'meilisearch') return this.searchMeili(request, houses, cities, neighborhoods, scopeIds, facetWindow);
-    return this.searchTypesense(request, houses, cities, neighborhoods, scopeIds);
+    // Search-engine IDs bound PostgreSQL hydration to the requested page; zero-hit facet transports never hydrate source rows.
+    if (provider === 'meilisearch') return this.searchMeili(request, cities, neighborhoods, scopeIds, facetWindow);
+    return this.searchTypesense(request, cities, neighborhoods, scopeIds);
   }
 
   private async nativeSourceSnapshot() {
@@ -521,19 +522,22 @@ export class RealServices {
       if (before.pending) throw new Error('Source/index updates are pending. Check System and retry shortly.');
       const pageResult = await this.searchExternal(provider, request, [], [], scopeIds);
       if (pageResult.totalHits > 1000) throw new Error('Native result set exceeds the 1,000-document demo limit.');
-      const all: HouseSearchHit[] = [];
+      const firstPageCoversAll = pageResult.hits.length === pageResult.totalHits;
+      const all: HouseSearchHit[] = request.includeMap !== false && firstPageCoversAll ? [...pageResult.hits] : [];
       const requests: unknown[] = [pageResult.debug.rawRequest];
       const responses: unknown[] = [pageResult.debug.rawResponse];
-      for (let page = 1; all.length < pageResult.totalHits && page <= 4; page++) {
-        const result = await this.searchExternal(provider, { ...request, page, pageSize: 250, includeFacets: false }, [], [], scopeIds);
-        if (result.totalHits !== pageResult.totalHits) throw new Error('Native result set changed during map retrieval; retry.');
-        requests.push(result.debug.rawRequest); responses.push(result.debug.rawResponse);
-        all.push(...result.hits);
-        if (!result.hits.length) break;
+      if (request.includeMap !== false && !firstPageCoversAll) {
+        for (let page = 1; all.length < pageResult.totalHits && page <= 4; page++) {
+          const result = await this.searchExternal(provider, { ...request, page, pageSize: 250, includeFacets: false }, [], [], scopeIds);
+          if (result.totalHits !== pageResult.totalHits) throw new Error('Native result set changed during map retrieval; retry.');
+          requests.push(result.debug.rawRequest); responses.push(result.debug.rawResponse);
+          all.push(...result.hits);
+          if (!result.hits.length) break;
+        }
       }
       const after = await this.nativeSourceSnapshot();
       if (after.pending || after.version !== before.version) throw new Error('Source data changed during native search; retry after indexing settles.');
-      if (all.length !== pageResult.totalHits || new Set(all.map((hit) => hit.id)).size !== all.length) throw new Error('Native index/source result set is incomplete; run a source backfill.');
+      if (request.includeMap !== false && (all.length !== pageResult.totalHits || new Set(all.map((hit) => hit.id)).size !== all.length)) throw new Error('Native index/source result set is incomplete; run a source backfill.');
       return { respondingProvider: provider, hits: pageResult.hits, mapHits: all, totalHits: pageResult.totalHits, facets: request.includeFacets ? pageResult.facets : {}, debug: {
         execution: request.mode === 'keyword' || !request.q?.trim() ? 'external-keyword' as const : request.mode === 'semantic' ? 'external-semantic' as const : 'external-hybrid' as const,
         rawRequest: requests, rawResponse: responses,
@@ -577,7 +581,7 @@ export class RealServices {
     return contentType.includes('application/json') ? response.json() : response.text();
   }
 
-  private async searchMeili(request: HouseSearchRequest, houses: House[], cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[], facetWindow?: Pick<HouseSearchRequest, 'page' | 'pageSize'>): Promise<ExternalSearchResult> {
+  private async searchMeili(request: HouseSearchRequest, cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[], facetWindow?: Pick<HouseSearchRequest, 'page' | 'pageSize'>): Promise<ExternalSearchResult> {
     // Meili1.11's zero-limit hybrid shortcut can skip semantic evaluation.
     // Keep the original positive finite window for this metadata-only transport;
     // facet counts still come from its native aggregation, never returned hits.
@@ -597,8 +601,10 @@ export class RealServices {
       method: 'POST',
       body: JSON.stringify(rawRequest)
     });
-    const hits = request.pageSize === 0 ? [] : this.hitsFromIds(
-      (rawResponse.hits ?? []).map((hit: { id: string }) => hit.id),
+    const ids = request.pageSize === 0 ? [] : (rawResponse.hits ?? []).map((hit: { id: string }) => hit.id);
+    const houses = ids.length ? await this.loadHouses(ids) : [];
+    const hits = this.hitsFromIds(
+      ids,
       houses,
       request,
       cities,
@@ -617,7 +623,7 @@ export class RealServices {
     };
   }
 
-  private async searchTypesense(request: HouseSearchRequest, houses: House[], cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[]): Promise<ExternalSearchResult> {
+  private async searchTypesense(request: HouseSearchRequest, cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[]): Promise<ExternalSearchResult> {
     const rawRequest = {
       q: request.q?.trim() || '*',
       query_by: request.q?.trim() && request.mode === 'semantic' ? 'embedding' : 'title,description,semanticText,city,neighborhood,schoolDistrict,amenities,tags' + (request.q?.trim() && request.mode === 'hybrid' ? ',embedding' : ''),
@@ -634,8 +640,10 @@ export class RealServices {
       if (value !== undefined && value !== '') params.set(key, String(value));
     }
     const rawResponse = await this.typesense(`/collections/houses/documents/search?${params.toString()}`);
+    const ids = request.pageSize === 0 ? [] : (rawResponse.hits ?? []).map((hit: { document: { id: string } }) => hit.document.id);
+    const houses = ids.length ? await this.loadHouses(ids) : [];
     const hits = this.hitsFromIds(
-      (rawResponse.hits ?? []).map((hit: { document: { id: string } }) => hit.document.id),
+      ids,
       houses,
       request,
       cities,

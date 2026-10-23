@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import FilterChip from '@/components/filter-chip';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import type { SearchHit } from '@/lib/search';
 
@@ -21,9 +22,9 @@ const Summary = memo(function Summary({ hit }: { hit: SearchHit }) {
   </>;
 });
 
-export default function ResultCard({ hit, selected, onSelect, onMap, onAmenity, ready, returnTo }: {
+export default function ResultCard({ hit, selected, activeAmenities, onSelect, onMap, onAmenity, ready, returnTo }: {
   hit: SearchHit; selected: boolean; ready: boolean; returnTo: string;
-  onSelect: () => void; onMap: () => void; onAmenity: (value: string) => void;
+  activeAmenities: string[]; onSelect: () => void; onMap: () => void; onAmenity: (value: string, active: boolean) => void;
 }) {
   return <Card className={`result-card gap-0 overflow-hidden py-0 shadow-none ${selected ? 'border-primary' : ''}`} data-house-id={hit.id}>
     <a data-slot="result-link" className="result-select block space-y-3 rounded-t-xl py-4 outline-none [-webkit-tap-highlight-color:transparent] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
@@ -33,7 +34,10 @@ export default function ResultCard({ hit, selected, onSelect, onMap, onAmenity, 
       <Summary hit={hit} />
     </a>
     <CardFooter className="flex flex-wrap items-center justify-between gap-2 pb-4 pt-0">
-      <div className="flex flex-wrap gap-1">{hit.amenities.slice(0, 4).map(item => <Button size="xs" variant="secondary" type="button" disabled={!ready} key={item} onClick={() => onAmenity(item)}>{label(item)}</Button>)}</div>
+      <div className="card-amenity-chips">{hit.amenities.slice(0, 4).map(item => {
+        const active = activeAmenities.includes(item);
+        return <FilterChip key={item} label={label(item)} active={active} disabled={!ready} ariaLabel={`${active ? 'Remove' : 'Filter by'} amenity: ${label(item)}`} onClick={() => onAmenity(item, !active)} />;
+      })}</div>
       <Button size="sm" variant="ghost" type="button" disabled={!ready} onClick={onMap}>Show on map</Button>
     </CardFooter>
   </Card>;

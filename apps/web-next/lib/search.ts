@@ -85,6 +85,8 @@ export function readSearchState(params: URLSearchParams): SearchState {
   if (mode && ['keyword', 'semantic', 'hybrid'].includes(mode)) initial.mode = mode as SearchMode;
   const sort = params.get('sort');
   if (sort && ['relevance', 'price_asc', 'price_desc', 'newest'].includes(sort)) initial.sort = sort as SearchSort;
+  const page = Number(params.get('page'));
+  if (Number.isSafeInteger(page) && page > 1) initial.page = Math.min(page, 100_000);
   initial.q = params.get('q') ?? '';
   for (const key of ['city', 'neighborhood', 'schoolDistrict', 'propertyType', 'bedrooms', 'amenities', 'listingStatus']) {
     const values = params.getAll(key);
@@ -96,6 +98,24 @@ export function readSearchState(params: URLSearchParams): SearchState {
   }
   initial.savedSearchIds = params.getAll('savedSearchId');
   return initial;
+}
+
+/** Stable, shareable URL for a server-rendered results page. UI-only state is omitted. */
+export function buildSearchUrl(state: SearchState, page = state.page): string {
+  const params = new URLSearchParams();
+  if (state.q) params.set('q', state.q);
+  if (state.provider !== 'postgres_native') params.set('provider', state.provider);
+  if (state.mode !== 'keyword') params.set('mode', state.mode);
+  if (state.sort !== 'relevance') params.set('sort', state.sort);
+  for (const [key, value] of Object.entries(state.filters).sort(([a], [b]) => a.localeCompare(b))) {
+    if (value === undefined) continue;
+    const values = Array.isArray(value) ? [...new Set(value.map(String))].sort() : [String(value)];
+    for (const item of values) params.append(key, item);
+  }
+  for (const id of [...state.savedSearchIds].sort()) params.append('savedSearchId', id);
+  if (page > 1) params.set('page', String(Math.min(Math.floor(page), 100_000)));
+  const query = params.toString();
+  return `/search${query ? `?${query}` : ''}`;
 }
 
 export function buildSearchRequest(state: SearchState, options: { page?: number; mapOnly?: boolean } = {}): SearchRequest {

@@ -1,4 +1,12 @@
 .map-canvas .leaflet-interactive:focus-visible { outline: 3px solid #12202e; outline-offset: 3px; stroke: #12202e; stroke-width: 4px; }
+.map-canvas .leaflet-tooltip.map-house-tooltip { max-width: min(68vw, 270px); padding: 0; border: 1px solid #d4dfdf; border-radius: 12px; color: #12202e; background: white; box-shadow: 0 5px 18px #12202e26; white-space: normal; pointer-events: auto; }
+.map-canvas .leaflet-tooltip.map-house-tooltip::before { border-top-color: #d4dfdf; }
+.map-tooltip-link { width: max-content; max-width: min(68vw, 270px); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 9px 12px; border: 0; border-radius: 11px; color: inherit; background: white; font: inherit; text-align: left; cursor: pointer; touch-action: manipulation; }
+.map-tooltip-link:focus-visible { outline: 3px solid #12202e; outline-offset: 2px; }
+.map-tooltip-title { grid-column: 1 / -1; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 12px; font-weight: 600; line-height: 1.35; }
+.map-tooltip-price { color: #087c6c; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.map-tooltip-action { justify-self: end; color: #40515a; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.map-house-tooltip-selected { z-index: 1000 !important; }
 .map-panel { position: absolute; inset: 0; }
 .map-feedback { position: absolute; z-index: 500; top: 12px; left: 12px; right: 64px; display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); box-shadow: 0 2px 8px #12202e18; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .map-feedback .map-retry { justify-self: start; }
@@ -9,6 +17,8 @@
 .embedded-map-static { touch-action: pan-y pinch-zoom; }
 .embedded-map-static > .map-canvas { pointer-events: none; touch-action: pan-y pinch-zoom; }
 .embedded-map-static > .map-canvas .leaflet-control-zoom { display: none; }
+.embedded-map-static > .map-canvas .leaflet-tooltip-pane { pointer-events: none; }
+.embedded-map-static > .map-canvas .leaflet-tooltip-pane .leaflet-tooltip.map-house-tooltip-selected { pointer-events: auto; cursor: pointer; }
 .expanded-map { position: fixed; inset: 0; width: 100%; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: white; color: var(--ink); overscroll-behavior: contain; }
 .expanded-map[open] { display: flex; flex-direction: column; }
 .expanded-map::backdrop { background: #10202b80; }

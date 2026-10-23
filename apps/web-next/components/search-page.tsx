@@ -1,8 +1,10 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import FilterPanel from '@/components/search-filters';
 import ResultCard from '@/components/result-card';
+import FilterChip from '@/components/filter-chip';
 import { ServiceSelects, SearchSettingsMenu, SortSelect } from '@/components/search-settings';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger, SheetClose } from '@/components/ui/sheet';
@@ -11,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import SearchQuery, { type PlaceSuggestion } from '@/components/search-query';
 import {
   activeFilterCount,
+  buildSearchUrl,
   buildSearchRequest,
   createLatestSearch,
   emptySearchState,
@@ -78,12 +81,13 @@ function readUrlState(): SearchState {
   return readSearchState(new URLSearchParams(window.location.search));
 }
 
-function syncUrl(state: SearchState, mode: 'push' | 'replace') {
+function syncUrl(state: SearchState, mode: 'push' | 'replace', routePage: number) {
   const params = new URLSearchParams();
   params.set('provider', state.provider);
   params.set('mode', state.mode);
   params.set('sort', state.sort);
   if (state.q) params.set('q', state.q);
+  if (routePage > 1) params.set('page', String(routePage));
   for (const [key, value] of Object.entries(state.filters)) {
     if (Array.isArray(value)) value.forEach((item) => params.append(key, String(item)));
     else if (value !== undefined) params.set(key, String(value));
@@ -97,6 +101,34 @@ function syncUrl(state: SearchState, mode: 'push' | 'replace') {
   }
 }
 
+function ResultsPagination({ state, page, totalHits, pageSize }: { state: SearchState; page: number; totalHits: number; pageSize: number }) {
+  const pageCount = Math.ceil(totalHits / pageSize);
+  if (pageCount < 2) return null;
+  const currentPage = Math.min(page, pageCount);
+  const pageNumbers = [...new Set([1, currentPage - 1, currentPage, currentPage + 1, pageCount])]
+    .filter(value => value >= 1 && value <= pageCount)
+    .sort((a, b) => a - b);
+  let previousNumber = 0;
+
+  return <nav className="results-pagination" aria-label="Search results pages" data-testid="results-pagination">
+    <p className="pagination-summary">Page {currentPage} of {pageCount}</p>
+    <div className="pagination-links">
+      {currentPage > 1 && <Button variant="outline" size="sm" asChild><Link href={buildSearchUrl(state, currentPage - 1)} prefetch={false} aria-label={`Previous page, page ${currentPage - 1}`}>Previous</Link></Button>}
+      {pageNumbers.map(number => {
+        const gap = previousNumber > 0 && number - previousNumber > 1;
+        previousNumber = number;
+        return <span className="pagination-number-wrap" key={number}>
+          {gap && <span className="pagination-ellipsis" aria-hidden="true">…</span>}
+          {number === currentPage
+            ? <span className="pagination-current" aria-current="page" aria-label={`Page ${number}, current page`}>{number}</span>
+            : <Button variant="outline" size="sm" asChild><Link href={buildSearchUrl(state, number)} prefetch={false} aria-label={`Page ${number}`}>{number}</Link></Button>}
+        </span>;
+      })}
+      {currentPage < pageCount && <Button variant="outline" size="sm" asChild><Link href={buildSearchUrl(state, currentPage + 1)} prefetch={false} aria-label={`Next page, page ${currentPage + 1}`}>Next</Link></Button>}
+    </div>
+  </nav>;
+}
+
 function Refinements({ filters, onRemove, onClear, ready }: { ready: boolean; filters: SearchFilters; onRemove: (key: string, value?: string | number) => void; onClear: () => void }) {
   const values = Object.entries(filters).flatMap(([key, value]) =>
     Array.isArray(value) ? value.map((item) => ({ key, value: item, label: key === 'bedrooms' ? `${item} beds` : title(String(item)) })) :
@@ -104,7 +136,7 @@ function Refinements({ filters, onRemove, onClear, ready }: { ready: boolean; fi
   );
   if (!values.length) return null;
   return <div className="refinements-wrap" aria-label="Applied filters">
-    <div className="refinements" data-testid="active-filter-chips">{values.map((item) => <Button variant="secondary" size="sm" className="chip" type="button" disabled={!ready} key={`${item.key}:${item.value}`} aria-label={`Remove ${title(item.key)}: ${item.label}`} onClick={() => onRemove(item.key, item.value)}><span>{item.label}</span><span aria-hidden="true">×</span></Button>)}<Button variant="ghost" size="sm" className="clear-refinements" type="button" disabled={!ready} onClick={onClear}>Clear all</Button></div>
+    <div className="refinements" data-testid="active-filter-chips">{values.map((item) => <FilterChip key={`${item.key}:${item.value}`} label={item.label} active disabled={!ready} ariaLabel={`Remove ${title(item.key)}: ${item.label}`} onClick={() => onRemove(item.key, item.value)} />)}<Button variant="ghost" size="sm" className="clear-refinements" type="button" disabled={!ready} onClick={onClear}>Clear all</Button></div>
   </div>;
 }
 
@@ -112,6 +144,7 @@ type InitialSearch = { request: SearchState; response: SearchResponse | null; er
 
 export default function SearchPage({ initial }: { initial?: InitialSearch }) {
   const [request, setRequest] = useState<SearchState>(() => initial?.request ?? emptySearchState());
+  const [routePage, setRoutePage] = useState(() => initial?.request.page ?? 1);
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<ViewMode>('list');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -136,6 +169,8 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
   viewRef.current = view;
   const requestRef = useRef(request);
   requestRef.current = request;
+  const routePageRef = useRef(routePage);
+  routePageRef.current = routePage;
   const feedScroll = useRef<FeedPosition>({ windowY: 0, listY: 0, width: 0, height: 0, anchor: null, focus: null });
   const restoreFeedFocus = useRef(false);
   const skipFeedRestore = useRef(false);
@@ -151,6 +186,8 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
   const mapController = useRef<ReturnType<typeof createLatestSearch<SearchResponse>> | null>(null);
   const historyMode = useRef<'push' | 'replace'>('replace');
   const appendNext = useRef(false);
+  const nextPagePending = useRef(false);
+  const paginationSentinel = useRef<HTMLDivElement>(null);
   const firstSearch = useRef(!initial);
   const skipInitialSearch = useRef(Boolean(initial));
   const searchImmediately = useRef(false);
@@ -189,6 +226,8 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
     performance.mark('searchlab-hydrated');
     const urlRequest = readUrlState();
     if (!initial || criteriaKey(initial.request) !== criteriaKey(urlRequest)) setRequest(urlRequest);
+    routePageRef.current = urlRequest.page;
+    setRoutePage(urlRequest.page);
     setView(readView());
     if (readView() === 'list' && new URLSearchParams(window.location.search).get('view') === 'split') writeUiUrl('list', new URLSearchParams(window.location.search).get('home'), false);
     setDetailId(new URLSearchParams(window.location.search).get('home'));
@@ -201,6 +240,9 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
       const previousDetail = detailIdRef.current;
       const previousView = viewRef.current;
       const sameCriteria = criteriaKey(next) === criteriaKey(requestRef.current);
+      const sameRoutePage = next.page === routePageRef.current;
+      routePageRef.current = next.page;
+      setRoutePage(next.page);
       const nextView = readView();
       const nextSearch = window.history.state?.searchlabSearch === true && !window.matchMedia('(min-width: 901px)').matches;
       restoreSearchPosition.current = searchFocusedRef.current && !nextSearch && sameCriteria;
@@ -212,10 +254,11 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
       restoreFeedFocus.current = sameCriteria && Boolean((previousDetail && !nextHome) || (previousView === 'map' && nextView !== 'map'));
       skipFeedRestore.current = !sameCriteria;
       // UI-only history must retain loaded pages and avoid another search.
-      if (sameCriteria) return;
+      if (sameCriteria && sameRoutePage) return;
       historyMode.current = 'replace';
       setLoading(true);
       appendNext.current = false;
+      nextPagePending.current = false;
       setLoadMore(false);
       setSelectedId(null);
       setRequest(next);
@@ -226,7 +269,7 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
 
   useEffect(() => {
     if (!ready || !searchController.current) return;
-    syncUrl(request, historyMode.current);
+    syncUrl(request, historyMode.current, routePageRef.current);
     historyMode.current = 'replace';
     if (skipInitialSearch.current) {
       skipInitialSearch.current = false;
@@ -240,13 +283,16 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
         const append = appendNext.current;
         setHits((previous) => append ? [...previous, ...next.hits] : next.hits);
         appendNext.current = false;
+        nextPagePending.current = false;
         setLoading(false);
         setLoadMore(false);
       },
       onError: (reason) => {
         if (reason instanceof Error && reason.name === 'AbortError') return;
         setError(reason instanceof Error ? reason.message : 'Search failed.');
-        if (request.page === 1) { setResponse(null); setHits([]); appendNext.current = false; }
+        appendNext.current = false;
+        nextPagePending.current = false;
+        if (request.page === 1) { setResponse(null); setHits([]); }
         setLoading(false);
         setLoadMore(false);
       }
@@ -314,8 +360,11 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
     historyMode.current = mode;
     setLoading(true);
     setLoadMore(false);
-    setRequest((current) => ({ ...change(current), page: 1 }));
     appendNext.current = false;
+    nextPagePending.current = false;
+    routePageRef.current = 1;
+    setRoutePage(1);
+    setRequest((current) => ({ ...change(current), page: 1 }));
     setSelectedId(null);
     setDetailId(null);
     const url = new URL(window.location.href);
@@ -398,13 +447,15 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
     setDetailId(null);
     setView(next);
   };
-  const openDetails = (hit: SearchHit) => {
+  const openDetailsById = (id: string) => {
     restoreFeedFocus.current = false;
     detailTrigger.current = document.activeElement as HTMLElement;
     rememberFeed();
-    setDetailId(hit.id);
-    writeUiUrl(view, hit.id);
+    setSelectedId(id);
+    setDetailId(id);
+    writeUiUrl(view, id);
   };
+  const openDetails = (hit: SearchHit) => openDetailsById(hit.id);
   const showOnMap = (id: string) => {
     if (!detailId) rememberFeed();
     writeUiUrl('map', null, !detailId);
@@ -429,21 +480,28 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
   const facetData = response?.facets ?? {};
   const viewLabel = view === 'map' ? 'Map' : view === 'list' ? 'List' : 'Split';
 
-  const loadNextPage = () => {
-    if (!response || hits.length >= response.totalHits || loading || error) return;
+  const loadNextPage = useCallback(() => {
+    if (!response || hits.length >= response.totalHits || loading || error || nextPagePending.current) return;
+    nextPagePending.current = true;
     appendNext.current = true;
     setLoading(true);
     setLoadMore(true);
     setRequest((current) => ({ ...current, page: response.page + 1 }));
-  };
+  }, [response, hits.length, loading, error]);
 
-  const returnParams = new URLSearchParams({ provider: request.provider, mode: request.mode, sort: request.sort });
-  if (request.q) returnParams.set('q', request.q);
-  for (const [key, value] of Object.entries(request.filters)) {
-    for (const item of value === undefined ? [] : Array.isArray(value) ? value : [value]) returnParams.append(key, String(item));
-  }
-  request.savedSearchIds.forEach(id => returnParams.append('savedSearchId', id));
-  const progressiveReturnTo = '/search?' + returnParams.toString();
+  useEffect(() => {
+    const sentinel = paginationSentinel.current;
+    if (!ready || !sentinel || !response || view === 'map' || error || loadMore || hits.length >= response.totalHits || !('IntersectionObserver' in window)) return;
+    const list = document.querySelector<HTMLElement>('.result-list');
+    const root = window.matchMedia('(min-width: 901px)').matches ? list : null;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) loadNextPage();
+    }, { root, rootMargin: root ? '650px 0px' : '900px 0px', threshold: 0 });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [ready, view, response, error, loadMore, hits.length, loadNextPage]);
+
+  const progressiveReturnTo = buildSearchUrl(request, routePage);
   const summary = response ? response.totalInventory == null ? `${response.totalHits.toLocaleString()} matches` : `${response.totalHits.toLocaleString()} of ${response.totalInventory.toLocaleString()}` : error ? 'Unavailable' : 'Loading results';
 
   return <main className="searchlab-shell">
@@ -464,7 +522,7 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
       </Sheet>
       <SortSelect className="sort-control min-w-0 flex-1" ready={ready} value={request.sort} onChange={sort => update(current => ({ ...current, sort }))} />
       <div className="view-tabs mobile-views" role="group" aria-label="Results view"><Button size="sm" variant={view === 'map' ? 'default' : 'ghost'} type="button" disabled={!ready} aria-pressed={view === 'map'} onClick={() => changeView('map')}>Map</Button><Button size="sm" variant={view === 'list' ? 'default' : 'ghost'} type="button" disabled={!ready} aria-pressed={view === 'list'} onClick={() => changeView('list')}>List</Button></div>
-      <SearchSettingsMenu className="mobile-settings" provider={request.provider} mode={request.mode} ready={ready} onProvider={provider => update(current => ({ ...current, provider }))} onMode={mode => update(current => ({ ...current, mode }))}>More</SearchSettingsMenu>
+      <SearchSettingsMenu className="mobile-settings" provider={request.provider} mode={request.mode} ready={ready} onProvider={provider => update(current => ({ ...current, provider }))} onMode={mode => update(current => ({ ...current, mode }))}><span className="sr-only">More settings</span></SearchSettingsMenu>
     </section>
 
     <div className="page-layout">
@@ -480,23 +538,27 @@ export default function SearchPage({ initial }: { initial?: InitialSearch }) {
         </header>
 
         <Refinements ready={ready} filters={request.filters} onRemove={removeFilter} onClear={clearFilters} />
-        {error && <div className="search-error" role="alert"><strong>Search unavailable</strong><span>{error}</span><button type="button" disabled={!ready} onClick={() => setRequest((current) => ({ ...current }))}>Retry</button></div>}
+        {error && <div className="search-error" role="alert"><strong>Search unavailable</strong><span>{error}</span><button type="button" disabled={!ready} onClick={() => { if (response && request.page > response.page) { appendNext.current = true; nextPagePending.current = true; setLoading(true); setLoadMore(true); } setError(null); setRequest((current) => ({ ...current, page: response && current.page > response.page ? response.page + 1 : current.page })); }}>Retry</button></div>}
         {response?.debug?.warnings?.map((warning) => <p className="backend-warning" key={warning}>{warning}</p>)}
         {!response && !error && <div className="result-skeletons" aria-label="Loading results" aria-busy="true"><div /><div /><div /></div>}
         {response && hits.length === 0 && !error && <div className="empty-results"><h2>No homes match this search</h2><p>Try fewer filters or a broader search.</p><button type="button" disabled={!ready} onClick={clearFilters}>Clear filters</button></div>}
         {response && hits.length > 0 && <div className={`results-workspace view-${viewLabel.toLowerCase()}`} data-view={view} aria-busy={loading}>
           {<div className="result-list" aria-label="Homes"><div className="result-list-inner">
-            {hits.map((hit) => <ResultCard key={hit.id} ready={ready} returnTo={progressiveReturnTo} hit={hit} selected={view !== 'list' && hit.id === selectedId} onSelect={() => openDetails(hit)} onMap={() => showOnMap(hit.id)} onAmenity={(value) => toggleFilter('amenities', value, true)} />)}
-            {hits.length < response.totalHits && <button type="button" className="load-more" onClick={loadNextPage} disabled={!ready || loading || Boolean(error)}>{loadMore ? 'Loading more…' : 'Show more homes'}</button>}
+            {hits.map((hit) => <ResultCard key={hit.id} ready={ready} returnTo={progressiveReturnTo} hit={hit} selected={view !== 'list' && hit.id === selectedId} activeAmenities={Array.isArray(request.filters.amenities) ? request.filters.amenities.map(String) : []} onSelect={() => openDetails(hit)} onMap={() => showOnMap(hit.id)} onAmenity={(value, active) => toggleFilter('amenities', value, active)} />)}
+            {hits.length < response.totalHits && <>
+              <Button variant="outline" className="load-more" onClick={loadNextPage} disabled={!ready || loading || Boolean(error)}>{loadMore ? 'Loading more homes…' : 'Load more homes'}</Button>
+              <div ref={paginationSentinel} className="results-infinite-sentinel" aria-hidden="true" />
+            </>}
           </div></div>}
           {view !== 'list' && <section className="map-column" tabIndex={-1} aria-label="Map of matching homes">
             {!mapResponse && !mapError && <div className="map-loading" role="status">Loading map results…</div>}
-            {mapResponse && <MapPanel hits={markers} selectedId={selectedId} onSelect={setSelectedId} feedback={mapFeedback} />}
+            {mapResponse && <MapPanel hits={markers} selectedId={selectedId} onSelect={setSelectedId} onActivate={openDetailsById} feedback={mapFeedback} />}
             {mapError && !mapResponse && <div className="map-unavailable" role="alert"><div><span>Map data is unavailable. The list and filters are still ready.</span><button className="map-retry" type="button" onClick={(event) => { event.currentTarget.closest<HTMLElement>('.map-column')?.focus({ preventScroll: true }); retryMap(); }}>Retry map</button></div></div>}
             {activeHit && <aside className="map-preview" aria-live="polite"><button type="button" aria-label="Close selected home" onClick={() => setSelectedId(null)}>×</button><strong>{money(activeHit.price)}</strong><h2>{activeHit.title}</h2><p>{activeHit.city}{activeHit.neighborhood ? ` · ${activeHit.neighborhood}` : ''}</p>{activeListHit && <span>{activeListHit.bedrooms} bd · {activeListHit.bathrooms} ba · {activeListHit.squareFeet.toLocaleString()} sqft</span>}</aside>}
           </section>}
         </div>}
         {response && <p className="result-footnote">{hits.length < response.totalHits ? `Showing ${hits.length} of ${response.totalHits.toLocaleString()} matches` : `Showing all ${response.totalHits.toLocaleString()} matches`}{response.totalInventory == null ? ' · total inventory unavailable' : ` · ${response.totalInventory.toLocaleString()} homes in inventory`}</p>}
+        {response && <ResultsPagination state={request} page={routePage} totalHits={response.totalHits} pageSize={response.pageSize} />}
       </section>
     </div>
     {detailId && <DetailsDialog id={detailId} hit={hits.find((hit) => hit.id === detailId) ?? null} onClose={closeDetails} onMap={() => showOnMap(detailId)} returnFocus={detailTrigger.current} />}

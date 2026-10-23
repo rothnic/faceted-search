@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { buildSearchRequest, createLatestSearch, postSearch, type SearchResponse, type SearchState } from '@/lib/search';
@@ -113,8 +114,8 @@ export default function SearchQuery({ request, response, settled, focused, ready
       {Object.entries(request.filters).flatMap(([key, value]) => value === undefined ? [] : (Array.isArray(value) ? value : [value]).map(item => <input key={`${key}:${item}`} type="hidden" name={key} value={String(item)} />))}
       {request.savedSearchIds.map(id => <input key={id} type="hidden" name="savedSearchId" value={id} />)}
       <div className="query-topline">
-        <label className="query-control"><span className="sr-only">Search listings</span><span aria-hidden="true" className="search-glyph">⌕</span>
-          <Input className="border-0 bg-transparent p-0 shadow-none focus-visible:ring-0" ref={input} type="search" name="q" data-testid="search-input" aria-label="Search listings" defaultValue={request.q} placeholder="Search homes, places, features…" autoComplete="off" enterKeyHint="search"
+        <label className="query-control"><span className="sr-only">Search listings</span><Search aria-hidden="true" className="search-glyph" size={20} strokeWidth={2} />
+          <Input className="search-input border-0 bg-transparent p-0 shadow-none focus-visible:ring-0" ref={input} type="search" name="q" data-testid="search-input" aria-label="Search listings" defaultValue={request.q} placeholder="Search homes, places, features…" autoComplete="off" enterKeyHint="search"
             role={focused ? 'combobox' : undefined} aria-autocomplete={focused ? 'list' : undefined} aria-expanded={focused ? expanded : undefined} aria-controls={expanded ? listId : undefined} aria-activedescendant={expanded && active >= 0 && places[active] ? `${listId}-${active}` : undefined}
             onFocus={() => { if (window.matchMedia('(max-width: 900px)').matches && !focused) { setDraft(input.current?.value ?? request.q); setDismissed(false); onOpen(); } }}
             onChange={(event) => { if (window.matchMedia('(min-width: 901px)').matches && !composing && !(event.nativeEvent as InputEvent).isComposing) onDesktopChange(event.target.value); else { setDraft(event.target.value); setDismissed(false); setActive(-1); } }}
@@ -127,9 +128,9 @@ export default function SearchQuery({ request, response, settled, focused, ready
                 setActive((current) => event.key === 'ArrowDown' ? (current + 1) % places.length : (current <= 0 ? places.length - 1 : current - 1));
               } else if (event.key === 'Enter' && expanded && active >= 0 && places[active]) { event.preventDefault(); commit(places[active]); }
             }} />
-          <Button variant="ghost" size="icon" type="button" className="clear-query" aria-label="Clear search query" disabled={!ready} hidden={!value} onClick={() => { if (input.current) input.current.value = ''; if (focused) { setDraft(''); setDismissed(false); input.current?.focus(); } else onDesktopChange(''); }}>×</Button>
+          <Button variant="ghost" size="icon" type="button" className="clear-query" aria-label="Clear search query" disabled={!ready} hidden={!value} onClick={() => { if (input.current) input.current.value = ''; if (focused) { setDraft(''); setDismissed(false); input.current?.focus(); } else onDesktopChange(''); }}><X aria-hidden="true" size={16} /></Button>
         </label>
-        {!focused && <Button variant="outline" className="query-native-submit" type="submit" aria-label="Search" title="Search"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg></Button>}
+        {!focused && <Button variant="default" className="query-native-submit" type="submit" aria-label="Search" title="Search"><Search aria-hidden="true" size={19} strokeWidth={2} /></Button>}
         {focused && <Button variant="ghost" className="query-cancel" type="button" onClick={cancel}>Cancel</Button>}
       </div>
       {focused && <div className="query-feedback">

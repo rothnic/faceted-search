@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "api:dev": "node --import tsx apps/api/src/main.ts",
+    "test:api": "node --import tsx --test apps/api/test/*.test.ts",
     "dev": "npm run stack:full",
     "web:build": "vite build",
     "web:dev": "vite --host 127.0.0.1",
