@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "api:dev": "node --import tsx apps/api/src/main.ts",
+    "test:api": "node --import tsx --test apps/api/test/*.test.ts",
     "dev": "npm run stack:full",
     "web:build": "vite build",
     "web:dev": "vite --host 127.0.0.1",
@@ -31,6 +32,7 @@
     "@huggingface/transformers": "3.8.1",
     "@meilisearch/instant-meilisearch": "^0.31.1",
     "@tanstack/virtual-core": "^3.17.0",
+    "algoliasearch-helper": "3.29.1",
     "instantsearch.js": "^4.101.1",
     "leaflet": "^1.9.4",
     "pg": "^8.21.0",

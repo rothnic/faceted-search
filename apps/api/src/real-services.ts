@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { PostgresSearch } from './postgres-search.js';
+import { libraryFacetSearch } from './instantsearch-facets.js';
 import { DATABASE_SCHEMA_SQL } from './schema.js';
 import { EmbeddingJobs } from './embedding-jobs.js';
 import { NativeAppliances, MEILI_NATIVE_EMBEDDER } from './appliance-vectors.js';
@@ -34,6 +35,7 @@ type ExternalSearchResult = {
 };
 
 export type RealServiceConfig = {
+  readOnly?: boolean;
   databaseUrl?: string;
   meiliHost: string;
   meiliKey: string;
@@ -55,6 +57,7 @@ export type SyncSummary = {
 };
 
 export class RealServices {
+  readonly readOnly: boolean;
   private pool: pg.Pool;
   private schemaReady?: Promise<void>;
   private locations = new WeakMap<House, { city: City; neighborhood?: Neighborhood }>();
@@ -64,7 +67,14 @@ export class RealServices {
 
   constructor(private config: RealServiceConfig) {
     if (!config.databaseUrl) throw new Error('DATABASE_URL is required for real service mode.');
-    this.pool = new Pool({ connectionString: config.databaseUrl, max: 6 });
+    this.readOnly = config.readOnly === true;
+    let connectionString = config.databaseUrl;
+    if (this.readOnly) {
+      const database = new URL(connectionString);
+      database.searchParams.set('options', `${database.searchParams.get('options') ?? ''} -c default_transaction_read_only=on`.trim());
+      connectionString = database.toString();
+    }
+    this.pool = new Pool({ connectionString, max: 6 });
     this.postgresSearch = new PostgresSearch(this.pool);
     const appliances = this.appliances = new NativeAppliances({ ...config, providers: config.syncProviders ?? [],
       onRepair: (provider) => this.embeddingJobs.beginProjectionRepair(provider),
@@ -136,7 +146,9 @@ export class RealServices {
 
   async start() {
     await this.ensureSchema();
-    await this.embeddingJobs.start();
+    // Disabling the worker alone still seeds/configures the queue. A read-only
+    // process must never enter that lifecycle, including its initialization.
+    if (!this.readOnly) await this.embeddingJobs.start();
   }
 
   async close() {
@@ -145,6 +157,17 @@ export class RealServices {
   }
 
   async ensureSchema() {
+    if (this.readOnly) {
+      this.schemaReady ??= this.pool.query(`SELECT current_setting('transaction_read_only') = 'on'
+        AND bool_and(to_regclass(name) IS NOT NULL) AS ready
+        FROM unnest(ARRAY['houses','cities','neighborhoods','house_amenities','house_tags',
+          'saved_searches','searchlab_dataset_identity','house_embedding_work','house_embeddings',
+          'embedding_pipeline_config','search_sync_state','pgmq.q_cpu_embeddings','pgmq.a_cpu_embeddings']) AS name`)
+        .then(({ rows }) => { if (!rows[0]?.ready) throw new Error('Read-only search requires an already provisioned database and read-only SQL sessions. No initialization was attempted.'); })
+        .catch(error => { this.schemaReady = undefined; throw error; });
+      await this.schemaReady;
+      return;
+    }
     this.schemaReady ??= this.pool.query(DATABASE_SCHEMA_SQL).then(() => undefined).catch((error) => {
       this.schemaReady = undefined;
       throw error;
@@ -259,8 +282,9 @@ export class RealServices {
     }
   }
 
-  async loadHouses(id?: string, queryable: pg.Pool | pg.PoolClient = this.pool): Promise<House[]> {
+  async loadHouses(idOrIds?: string | readonly string[], queryable: pg.Pool | pg.PoolClient = this.pool): Promise<House[]> {
     await this.ensureSchema();
+    const ids = typeof idOrIds === 'string' ? [idOrIds] : idOrIds ? [...idOrIds] : null;
     const { rows } = await queryable.query(`
       SELECT
         h.*, row_to_json(c) AS city_record, row_to_json(n) AS neighborhood_record,
@@ -271,10 +295,10 @@ export class RealServices {
       LEFT JOIN neighborhoods n ON n.id = h.neighborhood_id
       LEFT JOIN house_amenities ha ON ha.house_id = h.id
       LEFT JOIN house_tags ht ON ht.house_id = h.id
-      WHERE ($1::text IS NULL OR h.id = $1)
+      ${ids ? 'WHERE h.id = ANY($1::text[])' : ''}
       GROUP BY h.id, c.id, n.id
       ORDER BY h.id
-    `, [id ?? null]);
+    `, ids ? [ids] : []);
     return rows.map((row) => {
       const house: House = {
       id: row.id,
@@ -434,15 +458,58 @@ export class RealServices {
     return { provider, ...await this.embeddingJobs.backfill(true), status: 'queued' };
   }
 
-  async searchExternal(provider: ExternalProvider, request: HouseSearchRequest, cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[]): Promise<ExternalSearchResult> {
-    const houses = await this.loadHouses();
-    if (provider === 'meilisearch') return this.searchMeili(request, houses, cities, neighborhoods, scopeIds);
-    return this.searchTypesense(request, houses, cities, neighborhoods, scopeIds);
+  async searchExternal(provider: ExternalProvider, request: HouseSearchRequest, cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[], facetWindow?: Pick<HouseSearchRequest, 'page' | 'pageSize'>): Promise<ExternalSearchResult> {
+    // Search-engine IDs bound PostgreSQL hydration to the requested page; zero-hit facet transports never hydrate source rows.
+    if (provider === 'meilisearch') return this.searchMeili(request, cities, neighborhoods, scopeIds, facetWindow);
+    return this.searchTypesense(request, cities, neighborhoods, scopeIds);
+  }
+
+  private async nativeSourceSnapshot() {
+    return (await this.pool.query<{ total: number; pending: number; version: string }>(`SELECT
+      (SELECT count(*)::int FROM houses WHERE deleted_at IS NULL) AS total,
+      count(*) FILTER(WHERE completed_version < desired_version)::int AS pending,
+      COALESCE(max(desired_version),0)::text AS version FROM house_embedding_work`)).rows[0];
   }
 
   async search(request: HouseSearchRequest, scopeIds?: readonly string[]) {
+    if (!request.includeFacets) return this.searchNative(request, scopeIds);
+    const isPostgres = request.provider === 'postgres_native' || request.provider === 'pg_search';
+    const client = isPostgres ? await this.pool.connect() : undefined;
+    const postgres = client ? new PostgresSearch(client) : this.postgresSearch;
+    const before = isPostgres ? undefined : await this.nativeSourceSnapshot();
+    let main: Awaited<ReturnType<RealServices['searchNative']>> | undefined;
+    try {
+      // The library can issue several native SQL queries. One read-only MVCC
+      // snapshot keeps their hits and aggregations consistent without custom
+      // self-excluding SQL or a hand-written disjunctive query planner.
+      if (client) await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const { facets, queries } = await libraryFacetSearch(request, async (criteria, facetOnly) => {
+        if (!facetOnly) return main = await this.searchNative(criteria, scopeIds, postgres);
+        if (isPostgres) return postgres.search(criteria, scopeIds);
+        return this.searchExternal(request.provider as ExternalProvider, criteria, [], [], scopeIds, request);
+      });
+      if (!main) throw new Error('InstantSearch did not execute the primary native request.');
+      if (client) await client.query('COMMIT');
+      else {
+        await this.embeddingJobs.assertProjectionCurrent();
+        const after = await this.nativeSourceSnapshot();
+        if (after.pending || after.version !== before!.version || after.total !== before!.total) {
+          throw new EmbeddingUnavailableError('Source changed during native facet requests; retry after indexing settles.');
+        }
+      }
+      return { ...main, facets, debug: { ...main.debug,
+        rawRequest: { native: main.debug.rawRequest, instantSearch: queries },
+        notes: [...(main.debug.notes ?? []), 'InstantSearch search helper manages disjunctive refinement state, facet requests and result assembly. Counts are native service aggregations; no page-derived counts.']
+      } };
+    } catch (error) {
+      if (client) await client.query('ROLLBACK');
+      throw error;
+    } finally { client?.release(); }
+  }
+
+  private async searchNative(request: HouseSearchRequest, scopeIds?: readonly string[], postgres = this.postgresSearch) {
     if (request.provider === 'postgres_native' || request.provider === 'pg_search') {
-      const result = await this.postgresSearch.search(request, scopeIds);
+      const result = await postgres.search(request, scopeIds);
       return { ...result, respondingProvider: request.provider, debug: { ...result.debug, execution: request.mode === 'keyword' || !request.q?.trim() ? request.provider === 'pg_search' ? 'postgres-bm25' as const : 'postgres-fts' as const : request.mode === 'semantic' ? 'postgres-vector' as const : 'postgres-hybrid' as const } };
     }
     const provider = request.provider;
@@ -450,28 +517,27 @@ export class RealServices {
     try {
       await this.embeddingJobs.assertProjectionCurrent();
       if (await this.appliances.ensure(provider, AbortSignal.timeout(30_000))) throw new Error('Native index configuration was restored; automatic source backfill is pending.');
-      const snapshot = async () => (await this.pool.query(`SELECT
-        (SELECT count(*)::int FROM houses WHERE deleted_at IS NULL) AS total,
-        count(*) FILTER(WHERE completed_version < desired_version)::int AS pending,
-        COALESCE(max(desired_version),0)::text AS version FROM house_embedding_work`)).rows[0];
-      const before = await snapshot();
+      const before = await this.nativeSourceSnapshot();
       if (before.total > 1000) throw new Error('Complete native maps/scopes are limited to 1,000 total source documents in this demo.');
       if (before.pending) throw new Error('Source/index updates are pending. Check System and retry shortly.');
       const pageResult = await this.searchExternal(provider, request, [], [], scopeIds);
       if (pageResult.totalHits > 1000) throw new Error('Native result set exceeds the 1,000-document demo limit.');
-      const all: HouseSearchHit[] = [];
+      const firstPageCoversAll = pageResult.hits.length === pageResult.totalHits;
+      const all: HouseSearchHit[] = request.includeMap !== false && firstPageCoversAll ? [...pageResult.hits] : [];
       const requests: unknown[] = [pageResult.debug.rawRequest];
       const responses: unknown[] = [pageResult.debug.rawResponse];
-      for (let page = 1; all.length < pageResult.totalHits && page <= 4; page++) {
-        const result = await this.searchExternal(provider, { ...request, page, pageSize: 250 }, [], [], scopeIds);
-        if (result.totalHits !== pageResult.totalHits) throw new Error('Native result set changed during map retrieval; retry.');
-        requests.push(result.debug.rawRequest); responses.push(result.debug.rawResponse);
-        all.push(...result.hits);
-        if (!result.hits.length) break;
+      if (request.includeMap !== false && !firstPageCoversAll) {
+        for (let page = 1; all.length < pageResult.totalHits && page <= 4; page++) {
+          const result = await this.searchExternal(provider, { ...request, page, pageSize: 250, includeFacets: false }, [], [], scopeIds);
+          if (result.totalHits !== pageResult.totalHits) throw new Error('Native result set changed during map retrieval; retry.');
+          requests.push(result.debug.rawRequest); responses.push(result.debug.rawResponse);
+          all.push(...result.hits);
+          if (!result.hits.length) break;
+        }
       }
-      const after = await snapshot();
+      const after = await this.nativeSourceSnapshot();
       if (after.pending || after.version !== before.version) throw new Error('Source data changed during native search; retry after indexing settles.');
-      if (all.length !== pageResult.totalHits || new Set(all.map((hit) => hit.id)).size !== all.length) throw new Error('Native index/source result set is incomplete; run a source backfill.');
+      if (request.includeMap !== false && (all.length !== pageResult.totalHits || new Set(all.map((hit) => hit.id)).size !== all.length)) throw new Error('Native index/source result set is incomplete; run a source backfill.');
       return { respondingProvider: provider, hits: pageResult.hits, mapHits: all, totalHits: pageResult.totalHits, facets: request.includeFacets ? pageResult.facets : {}, debug: {
         execution: request.mode === 'keyword' || !request.q?.trim() ? 'external-keyword' as const : request.mode === 'semantic' ? 'external-semantic' as const : 'external-hybrid' as const,
         rawRequest: requests, rawResponse: responses,
@@ -515,22 +581,30 @@ export class RealServices {
     return contentType.includes('application/json') ? response.json() : response.text();
   }
 
-  private async searchMeili(request: HouseSearchRequest, houses: House[], cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[]): Promise<ExternalSearchResult> {
+  private async searchMeili(request: HouseSearchRequest, cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[], facetWindow?: Pick<HouseSearchRequest, 'page' | 'pageSize'>): Promise<ExternalSearchResult> {
+    // Meili1.11's zero-limit hybrid shortcut can skip semantic evaluation.
+    // Keep the original positive finite window for this metadata-only transport;
+    // facet counts still come from its native aggregation, never returned hits.
+    const semanticFacetOnly = request.pageSize === 0 && request.mode !== 'keyword' && Boolean(request.q?.trim());
+    if (semanticFacetOnly && (!facetWindow || facetWindow.pageSize < 1)) throw new Error('Semantic facet transport requires its original native search window.');
     const rawRequest = {
       q: request.q ?? '',
       filter: this.meiliFilters(request, scopeIds),
-      facets: ['cityFacet', 'neighborhoodFacet', 'schoolDistrictFacet', 'propertyTypeFacet', 'bedrooms', 'amenities', 'listingStatusFacet'],
+      facets: request.includeFacets ? ['cityFacet', 'neighborhoodFacet', 'schoolDistrictFacet', 'propertyTypeFacet', 'bedrooms', 'amenities', 'listingStatusFacet'] : [],
       sort: this.meiliSort(request),
-      page: request.page,
-      hitsPerPage: request.pageSize,
+      ...(semanticFacetOnly
+        ? { page: facetWindow!.page, hitsPerPage: facetWindow!.pageSize, attributesToRetrieve: [] }
+        : request.pageSize === 0 ? { limit: 0 } : { page: request.page, hitsPerPage: request.pageSize }),
       ...(request.mode !== 'keyword' && request.q?.trim() ? { hybrid: { embedder: MEILI_NATIVE_EMBEDDER, semanticRatio: request.mode === 'semantic' ? 1 : 0.45 }, showRankingScore: true, rankingScoreThreshold: 0.35 } : {})
     };
     const rawResponse = await this.meili('/indexes/houses/search', {
       method: 'POST',
       body: JSON.stringify(rawRequest)
     });
+    const ids = request.pageSize === 0 ? [] : (rawResponse.hits ?? []).map((hit: { id: string }) => hit.id);
+    const houses = ids.length ? await this.loadHouses(ids) : [];
     const hits = this.hitsFromIds(
-      (rawResponse.hits ?? []).map((hit: { id: string }) => hit.id),
+      ids,
       houses,
       request,
       cities,
@@ -549,12 +623,12 @@ export class RealServices {
     };
   }
 
-  private async searchTypesense(request: HouseSearchRequest, houses: House[], cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[]): Promise<ExternalSearchResult> {
+  private async searchTypesense(request: HouseSearchRequest, cities: City[], neighborhoods: Neighborhood[], scopeIds?: readonly string[]): Promise<ExternalSearchResult> {
     const rawRequest = {
       q: request.q?.trim() || '*',
       query_by: request.q?.trim() && request.mode === 'semantic' ? 'embedding' : 'title,description,semanticText,city,neighborhood,schoolDistrict,amenities,tags' + (request.q?.trim() && request.mode === 'hybrid' ? ',embedding' : ''),
       filter_by: this.typesenseFilters(request, scopeIds),
-      facet_by: 'cityFacet,neighborhoodFacet,schoolDistrictFacet,propertyTypeFacet,bedrooms,amenities,listingStatusFacet',
+      facet_by: request.includeFacets ? 'cityFacet,neighborhoodFacet,schoolDistrictFacet,propertyTypeFacet,bedrooms,amenities,listingStatusFacet' : undefined,
       sort_by: this.typesenseSort(request),
       page: request.page,
       per_page: request.pageSize,
@@ -566,8 +640,10 @@ export class RealServices {
       if (value !== undefined && value !== '') params.set(key, String(value));
     }
     const rawResponse = await this.typesense(`/collections/houses/documents/search?${params.toString()}`);
+    const ids = request.pageSize === 0 ? [] : (rawResponse.hits ?? []).map((hit: { document: { id: string } }) => hit.document.id);
+    const houses = ids.length ? await this.loadHouses(ids) : [];
     const hits = this.hitsFromIds(
-      (rawResponse.hits ?? []).map((hit: { document: { id: string } }) => hit.document.id),
+      ids,
       houses,
       request,
       cities,
@@ -606,7 +682,7 @@ export class RealServices {
       const values = request.filters[requestField];
       if (values?.length) filters.push(`${engineField} IN [${values.map((value) => JSON.stringify(value)).join(', ')}]`);
     }
-    for (const amenity of request.filters.amenities ?? []) filters.push(`amenities = ${JSON.stringify(amenity)}`);
+    if (request.filters.amenities?.length) filters.push('amenities IN [' + request.filters.amenities.map(value => JSON.stringify(value)).join(',') + ']');
     if (request.filters.minPrice !== undefined) filters.push(`price >= ${request.filters.minPrice}`);
     if (request.filters.maxPrice !== undefined) filters.push(`price <= ${request.filters.maxPrice}`);
     if (request.filters.minBedrooms !== undefined) filters.push(`bedrooms >= ${request.filters.minBedrooms}`);
@@ -644,7 +720,7 @@ export class RealServices {
       const values = request.filters[requestField];
       if (values?.length) filters.push(`${engineField}:=[${values.map((value) => this.typesenseValue(value)).join(',')}]`);
     }
-    for (const amenity of request.filters.amenities ?? []) filters.push(`amenities:=${this.typesenseValue(amenity)}`);
+    if (request.filters.amenities?.length) filters.push('amenities:=[' + request.filters.amenities.map(value => this.typesenseValue(value)).join(',') + ']');
     if (request.filters.minPrice !== undefined) filters.push(`price:>=${request.filters.minPrice}`);
     if (request.filters.maxPrice !== undefined) filters.push(`price:<=${request.filters.maxPrice}`);
     if (request.filters.minBedrooms !== undefined) filters.push(`bedrooms:>=${request.filters.minBedrooms}`);
@@ -735,6 +811,9 @@ export class RealServices {
 }
 
 export function realServiceConfigFromEnv(): RealServiceConfig {
+  if (process.env.SEARCH_READ_ONLY !== undefined && !['0', '1'].includes(process.env.SEARCH_READ_ONLY)) {
+    throw new Error('SEARCH_READ_ONLY must be 0 or 1.');
+  }
   const syncProviders = (process.env.SEARCH_SYNC_PROVIDERS ?? '').split(',').filter(Boolean);
   for (const provider of syncProviders) {
     if (provider !== 'meilisearch' && provider !== 'typesense') throw new Error('SEARCH_SYNC_PROVIDERS must be a comma-separated list of meilisearch,typesense.');
@@ -746,6 +825,7 @@ export function realServiceConfigFromEnv(): RealServiceConfig {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(key + ' must be an HTTP(S) origin without credentials.');
   }
   return {
+    readOnly: process.env.SEARCH_READ_ONLY === '1',
     databaseUrl: process.env.DATABASE_URL,
     meiliHost: process.env.MEILI_HOST ?? '',
     meiliKey: process.env.MEILI_MASTER_KEY ?? '',

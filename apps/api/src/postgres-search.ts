@@ -121,7 +121,7 @@ type SearchRow = {
  * All response sections read one MATERIALIZED matching relation in one MVCC
  * snapshot. scopeIds is already evaluated saved-search membership, not a page. */
 export class PostgresSearch {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: Pick<pg.Pool, 'query'>) {}
 
   async search(request: HouseSearchRequest, scopeIds?: readonly string[]): Promise<PostgresSearchResult> {
     if (request.provider !== 'postgres_native' && request.provider !== 'pg_search') throw new Error('PostgresSearch requires a PostgreSQL provider.');
@@ -166,8 +166,7 @@ export class PostgresSearch {
       }
     }
     if (f.amenities?.length) {
-      predicates.push(`NOT EXISTS (SELECT 1 FROM unnest(${param(f.amenities, '::text[]')}) wanted(amenity)
-        WHERE NOT EXISTS (SELECT 1 FROM house_amenities selected WHERE selected.house_id=h.id AND selected.amenity=wanted.amenity))`);
+      predicates.push('EXISTS (SELECT 1 FROM house_amenities selected WHERE selected.house_id=h.id AND selected.amenity = ANY(' + param(f.amenities, '::text[]') + '))');
     }
     if (request.viewport) {
       const v = request.viewport;
@@ -188,7 +187,7 @@ export class PostgresSearch {
     }
     if (q && request.mode === 'keyword') predicates.push(bm25 ? 'lex.house_id IS NOT NULL' : 's.search_vector @@ query_input.terms');
     const page = Number.isFinite(request.page) ? Math.max(1, Math.floor(request.page)) : 1;
-    const pageSize = Number.isFinite(request.pageSize) ? Math.max(1, Math.min(50, Math.floor(request.pageSize))) : 12;
+    const pageSize = Number.isFinite(request.pageSize) ? Math.max(0, Math.min(50, Math.floor(request.pageSize))) : 12;
     const limit = param(pageSize, '::integer'); const offset = param((page - 1) * pageSize, '::bigint');
     const order = {
       relevance: 'score DESC, updated_at DESC, id ASC', distance: 'distance_miles ASC NULLS LAST, id ASC',

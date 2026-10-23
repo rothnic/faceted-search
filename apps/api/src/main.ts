@@ -1,3 +1,4 @@
+import { FACET_DEFINITIONS } from './facets.js';
 import { publicDiagnostics } from './public-diagnostics.js';
 import { describeSchema } from './schema.js';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -137,6 +138,7 @@ async function performSearch(request: HouseSearchRequest): Promise<HouseSearchRe
       hits: request.mapOnly ? [] : result.hits,
       mapHits: request.includeMap === false ? [] : toMapHits(result.mapHits),
       page: request.page, pageSize: request.pageSize, processingTimeMs: apiMs,
+      facetDefinitions: request.includeFacets ? FACET_DEFINITIONS : [],
       provenance: {
         selectedProvider: provider.id, respondingProvider: result.respondingProvider,
         storage: 'postgres', execution: result.debug.execution,
@@ -160,7 +162,7 @@ async function savedSearchScopeIds(ids: string[] | undefined): Promise<Set<strin
   return scopedIds;
 }
 async function savedSearchMatches(search: SavedHouseSearch) {
-  return (await realServices.search(defaultRequest({ ...search.criteria, savedSearchIds: [] }))).mapHits;
+  return (await realServices.search(defaultRequest({ ...search.criteria, savedSearchIds: [], includeFacets: false }))).mapHits;
 }
 
 function toMapHits(hits: HouseSearchMapHit[]): HouseSearchMapHit[] {
@@ -209,7 +211,7 @@ async function savedSearchesWithLiveCounts(): Promise<SavedHouseSearch[]> {
 }
 
 async function evaluateSavedSearch(search: SavedHouseSearch) {
-  const response = await performSearch({ ...search.criteria, page: 1, pageSize: 50, includeFacets: true });
+  const response = await performSearch({ ...search.criteria, page: 1, pageSize: 50, includeFacets: false });
   const hitIds = response.mapHits.map((hit) => hit.id);
   const newMatches = hitIds.filter((id) => !search.seenHouseIds.includes(id));
   return {
@@ -291,10 +293,14 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse) {
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string) {
   if (req.method === 'OPTIONS') return send(res, 204, {});
+  if (realServices.readOnly && req.method !== 'GET' && req.method !== 'HEAD'
+      && !(req.method === 'POST' && pathname === '/api/search')) {
+    return send(res, 403, { error: 'This search API is read-only.', code: 'READ_ONLY_RUNTIME' });
+  }
 
   if (req.method === 'GET' && pathname === '/api/providers') {
     return send(res, 200, { providers, catalog: await realServices.catalog(), catalogSource: 'postgres',
-      storageMode: 'postgres', dataset: await realServices.datasetIdentity(runtime.datasetId),
+      storageMode: 'postgres', readOnly: realServices.readOnly, dataset: await realServices.datasetIdentity(runtime.datasetId),
       observedAt: new Date().toISOString(), geoPresets: {} });
   }
 
@@ -403,7 +409,7 @@ const server = createServer(async (req, res) => {
   const address = server.address();
   const boundPort = address && typeof address === 'object' ? address.port : port;
   console.log(`Searchlab connected API running at http://${host}:${boundPort}/search`);
-  process.send?.({ type: 'ready', port: boundPort });
+  process.send?.({ type: 'ready', port: boundPort, readOnly: realServices.readOnly });
 });
 
 let shuttingDown = false;

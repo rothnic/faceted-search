@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { verifyReadOnlyRuntime } from './verify-read-only-runtime.js';
+import { verifyDisjunctiveFacets, verifyFacetComponents } from './verify-disjunctive-facets.js';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
@@ -76,6 +78,7 @@ export async function verifyRuntimeAuthenticity(api: string, database: string) {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     assert(current, 'Source must be restored and real projections current');
+    evidence.readOnly = await verifyReadOnlyRuntime(database, pool);
     assert.equal((await fetch(api + '/api/seed', { method: 'POST' })).status, 404, 'Production has no fixture seed route');
     assert.equal((await post(api, { ...criteria, provider: 'unknown' })).status, 400);
     const next = await nextServer(api, 'ci-native'); servers.push(next);
@@ -91,17 +94,22 @@ export async function verifyRuntimeAuthenticity(api: string, database: string) {
       assert.deepEqual(result.body.mapHits, []);
       (evidence.providers as unknown[]).push({ provider, totalHits: result.body.totalHits, loaded: result.body.hits.length, provenance: result.body.provenance, gatewayTimingMs: result.body.gatewayTimingMs });
     }
+    evidence.facets = await verifyDisjunctiveFacets(next.origin, pool, api);
     browser = await chromium.launch({ headless: true });
+    evidence.facetComponents = await verifyFacetComponents(next.origin, browser);
     for (const width of [390, 1440]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       await page.goto(next.origin + '/search?q=garage');
-      await page.getByLabel('Backend provenance').waitFor();
-      assert.match(await page.getByLabel('Backend provenance').innerText(), /Responded postgres_native/);
+      await page.getByRole('button', { name: /^Show backend details/ }).click();
+      const provenance = await page.locator('.backend-provenance').innerText();
+      assert.match(provenance, /Responding provider\s+postgres_native/);
+      assert.match(provenance, new RegExp(identity.databaseFingerprint));
+      await page.getByRole('button', { name: 'Close request details' }).click();
       assert.match(await page.getByTestId('results-count').innerText(), /35/);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page overflow');
       await mkdir('test-results/real-screenshots', { recursive: true });
       await page.screenshot({ path: 'test-results/real-screenshots/next-authenticity-' + width + '.png', fullPage: true });
-      (evidence.browsers as unknown[]).push({ width, count: await page.getByTestId('results-count').innerText(), provenance: await page.getByLabel('Backend provenance').innerText() });
+      (evidence.browsers as unknown[]).push({ width, count: await page.getByTestId('results-count').innerText(), provenance });
       await page.close();
     }
     const wrong = await nextServer(api, 'wrong-dataset'); servers.push(wrong);

@@ -6,6 +6,7 @@ import { toTypesenseDocument } from '../../../packages/search-transform/src/to-t
 
 export type ApplianceProvider = 'meilisearch' | 'typesense';
 export type ApplianceConfig = {
+  readOnly?: boolean;
   meiliHost: string;
   meiliKey: string;
   typesenseHost: string;
@@ -86,7 +87,7 @@ export class NativeAppliances {
     if (!ready) {
       // Coalesce only concurrent checks. Indexes and remote embedders can change after any successful check.
       ready = (provider === 'meilisearch' ? this.ensureMeili(signal) : this.ensureTypesense(signal)).then(async (repaired) => {
-        await this.config.onReady?.(provider);
+        if (!this.config.readOnly) await this.config.onReady?.(provider);
         return repaired;
       }).finally(() => {
         if (this.inFlight.get(provider) === ready) this.inFlight.delete(provider);
@@ -109,6 +110,7 @@ export class NativeAppliances {
   }
 
   async sync(doc: HouseSearchDocument | undefined, id: string, signal: AbortSignal): Promise<boolean> {
+    this.requireWritable();
     if (!this.providers.length) return false;
     signal.throwIfAborted();
     if (!id || (doc && doc.id !== id)) throw new Error('Appliance document ID must match its queued house ID.');
@@ -154,9 +156,13 @@ export class NativeAppliances {
   }
 
   private async ensureMeili(signal: AbortSignal) {
-    await this.request('meilisearch', '/experimental-features', signal, { method: 'PATCH', body: JSON.stringify({ vectorStore: true }) });
+    if (this.config.readOnly) {
+      const features = await this.request<{ vectorStore?: boolean }>('meilisearch', '/experimental-features', signal);
+      if (features?.vectorStore !== true) throw new Error('Read-only search requires Meilisearch vectorStore already enabled.');
+    } else await this.request('meilisearch', '/experimental-features', signal, { method: 'PATCH', body: JSON.stringify({ vectorStore: true }) });
     const index = await this.request<{ primaryKey?: string | null }>('meilisearch', '/indexes/houses', signal, {}, true);
     if (!index) {
+      this.requireWritable();
       await this.config.onRepair?.('meilisearch');
       const task = await this.request<MeiliTask>('meilisearch', '/indexes', signal, { method: 'POST', body: JSON.stringify({ uid: 'houses', primaryKey: 'id' }) });
       await this.waitForMeiliTask(task, signal);
@@ -188,6 +194,7 @@ export class NativeAppliances {
     // Meili1.11 merges embedder maps: omitted names remain unchanged, including masked credentials.
     if (!existing) changes.embedders = { [MEILI_NATIVE_EMBEDDER]: MEILI_NATIVE_CONFIG };
     if (Object.keys(changes).length) {
+      this.requireWritable();
       await this.config.onRepair?.('meilisearch');
       const task = await this.request<MeiliTask>('meilisearch', '/indexes/houses/settings', signal, { method: 'PATCH', body: JSON.stringify(changes) });
       await this.waitForMeiliTask(task, signal);
@@ -201,6 +208,7 @@ export class NativeAppliances {
     if (!version || Number(version[1]) < 28) throw new Error(`Typesense stable 28.0 or newer is required for correct native embedding updates (found ${debug?.version ?? 'unknown'}).`);
     const collection = await this.request<Collection>('typesense', '/collections/houses', signal, {}, true);
     if (!collection) {
+      this.requireWritable();
       await this.config.onRepair?.('typesense');
       await this.request('typesense', '/collections', signal, { method: 'POST', body: JSON.stringify({ name: 'houses', fields: TYPESENSE_FIELDS, default_sorting_field: 'price' }) });
       return true;
@@ -228,13 +236,19 @@ export class NativeAppliances {
     // Existing documents need not already contain newly added base fields. Never drop or re-add fields.
     const missing = TYPESENSE_FIELDS.filter((field) => field.name !== 'id' && !collection.fields.some((existing) => existing.name === field.name)).map((field) => ({ ...field, optional: true }));
     if (missing.length) {
+      this.requireWritable();
       await this.config.onRepair?.('typesense');
       await this.request('typesense', '/collections/houses', signal, { method: 'PATCH', body: JSON.stringify({ fields: missing }) });
     }
     return missing.length > 0;
   }
 
+  private requireWritable() {
+    if (this.config.readOnly) throw new Error('Read-only search requires already provisioned native indexes; repair and document writes are disabled.');
+  }
+
   private async request<T = unknown>(provider: ApplianceProvider, path: string, signal: AbortSignal, init: RequestInit = {}, allowMissing = false): Promise<T | undefined> {
+    if ((init.method ?? 'GET').toUpperCase() !== 'GET') this.requireWritable();
     const host = provider === 'meilisearch' ? this.config.meiliHost : this.config.typesenseHost;
     const headers = new Headers(init.headers);
     headers.set('Content-Type', 'application/json');
