@@ -101,10 +101,13 @@ button:not([data-slot]):focus-visible, a:not([data-slot]):focus-visible, input:n
 .save-search:disabled { cursor: not-allowed; opacity: .76; }
 .refinements-wrap { min-height: 32px; display: flex; align-items: center; margin: 0 0 10px; }
 .refinements { display: flex; align-items: center; gap: 7px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
-.filter-chip { flex: 0 0 auto; height: 32px; min-height: 32px; gap: 6px; padding-inline: 10px; border-radius: 999px; font-size: 13px; line-height: 1; }
+.filter-chip, .card-amenity-chip { flex: 0 0 auto; height: 32px; min-height: 32px; padding-block: 0; padding-inline: 10px; border-radius: 999px; font-size: 13px; line-height: 1; }
+.filter-chip { gap: 6px; }
 .filter-chip svg { width: 14px; height: 14px; stroke-width: 2.25; }
 .filter-chip-active { background: var(--green); color: white; }
-.card-amenity-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.result-card-footer { justify-content: space-between; }
+.card-amenity-chips { display: flex; flex: 1 1 180px; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.card-map-action { flex: 0 0 auto; min-height: 44px; margin-inline-start: auto; white-space: nowrap; }
 .clear-refinements { flex: 0 0 auto; }
 .results-workspace { min-height: min(660px, calc(100vh - 220px)); display: grid; grid-template-columns: minmax(320px, .92fr) minmax(320px, 1.08fr); gap: 12px; }
 .results-workspace[data-view="list"] { grid-template-columns: minmax(0, 1fr); }

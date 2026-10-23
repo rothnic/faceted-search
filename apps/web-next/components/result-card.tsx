@@ -33,12 +33,12 @@ export default function ResultCard({ hit, selected, activeAmenities, onSelect, o
       aria-haspopup={ready ? 'dialog' : undefined} aria-label={`View details: ${hit.title}`}>
       <Summary hit={hit} />
     </a>
-    <CardFooter className="flex flex-wrap items-center justify-between gap-2 pb-4 pt-0">
+    <CardFooter className="result-card-footer flex flex-wrap items-center gap-2 pb-4 pt-0">
       <div className="card-amenity-chips">{hit.amenities.slice(0, 4).map(item => {
         const active = activeAmenities.includes(item);
-        return <FilterChip key={item} label={label(item)} active={active} disabled={!ready} ariaLabel={`${active ? 'Remove' : 'Filter by'} amenity: ${label(item)}`} onClick={() => onAmenity(item, !active)} />;
+        return <FilterChip key={item} label={label(item)} active={active} appearance="card" disabled={!ready} ariaLabel={`${active ? 'Remove' : 'Filter by'} amenity: ${label(item)}`} onClick={() => onAmenity(item, !active)} />;
       })}</div>
-      <Button size="sm" variant="ghost" type="button" disabled={!ready} onClick={onMap}>Show on map</Button>
+      <Button className="card-map-action" size="sm" variant="ghost" type="button" disabled={!ready} onClick={onMap}>Show on map</Button>
     </CardFooter>
   </Card>;
 }
